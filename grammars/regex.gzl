@@ -1,12 +1,11 @@
 start regex;
-expect 3 sr;
 terminals {
     CHAR: _,
     SHORTHAND: _,
     DOT, STAR, PLUS, QUESTION, PIPE,
     LPAREN, RPAREN,
     LBRACKET, RBRACKET,
-    CARET, DASH
+    shift CARET, shift DASH
 }
 
 regex = (concat % PIPE) => regex;

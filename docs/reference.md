@@ -9,6 +9,7 @@ Complete reference for the Gazelle parser generator.
 - Minimal LR table generation
 - Type-safe parser generation with `Types`/`Action` traits
 - Precedence terminals (`prec`) for runtime operator precedence
+- Terminal modifiers for S/R conflict resolution (`shift`, `reduce`, `conflict`)
 - Modifiers: `?` (optional), `*` (zero+), `+` (one+), `%` (separated list)
 - Expected conflict declarations (`expect N rr/sr`)
 - Conflict diagnostics with concrete example inputs showing both parses
@@ -166,8 +167,25 @@ terminals {
     // Precedence terminal (for operator precedence parsing)
     prec OP: _,         // Carries precedence at runtime
     prec BINOP,         // Prec terminal without payload
+
+    // Conflict resolution modifiers
+    shift ELSE,         // Always shift on S/R conflict (e.g. dangling else)
+    reduce SEMI,        // Always reduce on S/R conflict
+    conflict TOK: _,    // Caller decides per-token (via Resolution)
 }
 ```
+
+**Terminal modifiers** control how shift/reduce conflicts are resolved:
+
+| Modifier | Behavior | Use case |
+|----------|----------|----------|
+| *(none)* | S/R conflict is an error | Default — grammar must be unambiguous |
+| `prec` | Resolved by runtime precedence (`Precedence::Left`/`Right`) | Expression operators |
+| `shift` | Always shift | Dangling else, longest match |
+| `reduce` | Always reduce | Rare; when shorter parse is preferred |
+| `conflict` | Caller supplies `Resolution` per token | Mixed strategies at runtime |
+
+Modifiers work by preventing S/R conflicts from appearing in the parser tables entirely. The table construction phase emits the correct action (shift, reduce, or shift-or-reduce) based on the modifier, so no runtime overhead for `shift`/`reduce` — the decision is baked into the table.
 
 **Terminal naming convention:** Terminals should be UPPERCASE to distinguish from non-terminals.
 
@@ -243,7 +261,9 @@ expect 1 sr;  // Expect 1 shift/reduce conflict
 // ... rest of grammar
 ```
 
-Use this for grammars with known ambiguities (like C's typedef or dangling else).
+Use this for grammars with known ambiguities (like C's typedef). The count must match exactly — if the grammar changes and the conflict count shifts, the build fails.
+
+**Prefer terminal modifiers over `expect` for S/R conflicts.** For example, the classic dangling-else conflict is better handled with `shift ELSE` than `expect 1 sr`, because the modifier makes the intent explicit and eliminates the conflict at the source rather than suppressing the diagnostic.
 
 ---
 
@@ -739,4 +759,4 @@ Shift/reduce conflict on 'C':
     (A) C D (reduce to x)
 ```
 
-Use `expect N rr;` / `expect N sr;` in the grammar to suppress conflict errors when the count matches (like C's dangling else or typedef ambiguity). Unmatched counts still produce errors.
+For S/R conflicts, prefer terminal modifiers (`shift`, `reduce`, `conflict`, `prec`) which resolve the conflict at the source. Use `expect N rr;` / `expect N sr;` to suppress remaining conflicts when the count matches (like C's typedef ambiguity). Unmatched counts still produce errors.

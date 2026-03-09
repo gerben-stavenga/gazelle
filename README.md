@@ -148,7 +148,21 @@ impl calc::Types for Evaluator {
 
 Set it to `Ignore`, and the node is discarded — useful for validation-only parsing. Mix and match freely across nonterminals: auto-box some, evaluate others, ignore the rest. The same grammar, the same generated enums — the representation depends entirely on what types you plug in.
 
-### 5. Conflict Diagnostics with Examples
+### 5. Declarative Conflict Resolution
+
+For grammars with intentional ambiguities, terminal modifiers resolve S/R conflicts at the grammar level:
+
+```
+terminals {
+    shift ELSE,         // dangling else: always shift
+    prec OP: _,         // operators: runtime precedence
+    conflict TOK: _,    // caller decides per-token
+}
+```
+
+`shift` and `reduce` bake the decision into the parse table — zero runtime cost. `prec` and `conflict` defer to per-token resolution at parse time. No `%expect` hacks — the intent is explicit in the grammar.
+
+### 6. Conflict Diagnostics with Examples
 
 When a grammar has shift/reduce or reduce/reduce conflicts, Gazelle shows concrete example inputs with two bracketings — one for each parse:
 
@@ -163,7 +177,7 @@ Shift/reduce conflict on 'ELSE':
 
 The example is found by BFS on the raw DFA — shortest viable prefix to the conflict state, then a joint suffix search that drives both parser interpretations to acceptance. The dot marks the conflict point. When the grammar is LR(k>1) rather than ambiguous (no single string has two parses), separate examples are shown for each interpretation.
 
-### 6. Parser Generator as a Library
+### 7. Parser Generator as a Library
 
 Most parser generators are build tools. Gazelle exposes table construction as a library:
 

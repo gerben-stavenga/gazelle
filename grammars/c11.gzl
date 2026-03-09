@@ -1,11 +1,10 @@
 start translation_unit_file;
 expect 3 rr;  // typedef_name ambiguity (3 terminals)
-expect 2 sr;  // dangling else (2 states)
 terminals {
     NAME: _, TYPE, VARIABLE,
     CONSTANT: _, STRING_LITERAL: _,
     AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE,
-    ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
+    shift ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
     REGISTER, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC,
     STRUCT, SWITCH, TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE,
     ALIGNAS, ALIGNOF, ATOMIC, BOOL, COMPLEX, GENERIC, IMAGINARY,

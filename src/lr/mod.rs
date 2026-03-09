@@ -146,31 +146,13 @@ impl SymbolTable {
         id.0 < self.num_terminals
     }
 
-    /// Check if this terminal is a precedence terminal.
-    pub fn is_prec_terminal(&self, id: SymbolId) -> bool {
-        if id.0 >= self.num_terminals {
-            return false;
-        }
-        matches!(
-            self.terminals[id.0 as usize].kind,
-            crate::grammar::TerminalKind::Prec
-        )
-    }
-
-    /// Check if this terminal is a conflict terminal.
-    pub fn is_conflict_terminal(&self, id: SymbolId) -> bool {
-        if id.0 >= self.num_terminals {
-            return false;
-        }
-        matches!(
-            self.terminals[id.0 as usize].kind,
-            crate::grammar::TerminalKind::Conflict
-        )
-    }
-
     /// Check if this terminal carries a runtime resolution field (prec or conflict).
+    #[cfg(feature = "codegen")]
     pub fn has_resolution_field(&self, id: SymbolId) -> bool {
-        self.is_prec_terminal(id) || self.is_conflict_terminal(id)
+        matches!(
+            self.terminal_kind(id),
+            crate::grammar::TerminalKind::Prec | crate::grammar::TerminalKind::Conflict
+        )
     }
 
     /// Get the terminal kind.
@@ -212,6 +194,7 @@ impl SymbolTable {
     }
 
     /// Iterate over all non-terminal IDs.
+    #[cfg(feature = "codegen")]
     pub fn non_terminal_ids(&self) -> impl Iterator<Item = SymbolId> {
         let start = self.num_terminals;
         let end = start + self.non_terminals.len() as u32;
@@ -251,6 +234,7 @@ pub(crate) struct Rule {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // `types` is used by codegen (behind cfg)
 pub(crate) struct GrammarInternal {
     pub rules: Vec<Rule>,
     pub symbols: SymbolTable,
@@ -1132,7 +1116,7 @@ mod tests {
         let c11 = to_grammar_internal(&parse_grammar(&c11_src).unwrap()).unwrap();
         let (_, _, rr, sr) = grammar_stats(&c11);
         assert_eq!(rr, 3);
-        assert_eq!(sr, 2);
+        assert_eq!(sr, 0);
 
         // Classic LR(1)-but-not-LALR(1) grammar:
         // S → aEa | bEb | aFb | bFa; E → e; F → e
