@@ -2,6 +2,20 @@
 
 An LR parser generator for Rust with runtime operator precedence and natural lexer feedback.
 
+## Getting Started
+
+Add both crates to your `Cargo.toml`:
+
+```toml
+[dependencies]
+gazelle-parser = "0.9"
+gazelle-macros = "0.9"
+```
+
+`gazelle-parser` provides the runtime (parser, tokens, precedence, error handling). `gazelle-macros` provides the `gazelle!` proc macro that generates parser code from your grammar. Both are required for typical use.
+
+For runtime-only usage (dynamic grammars without the macro), `gazelle-parser` alone is sufficient — see [Parser Generator as a Library](#7-parser-generator-as-a-library).
+
 ## What Makes Gazelle Different
 
 ### 1. Runtime Operator Precedence
@@ -20,6 +34,7 @@ Gazelle's `prec` terminals carry precedence at runtime:
 ```rust
 gazelle! {
     grammar Calc {
+        start expr;
         terminals {
             NUM: _,
             prec OP: _,  // precedence attached to each token
@@ -70,32 +85,35 @@ gazelle! {
 }
 ```
 
-Actions are split into a `Types` trait and per-node `Action` impls:
+Actions are split into an `ErrorType` trait, a `Types` trait, and per-node `Action` impls:
 
 ```rust
+impl gazelle::ErrorType for Evaluator {
+    type Error = String;
+}
+
 impl calc::Types for Evaluator {
-    type Error = ParseError;
     type Num = f64;
     type Op = char;
     type Expr = f64;
 }
 
 impl gazelle::Action<calc::Expr<Self>> for Evaluator {
-    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, ParseError> {
-        Ok(match node {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, Self::Error> {
+        match node {
             calc::Expr::Binop(left, op, right) => match op {
-                '+' => left + right,
-                '*' => left * right,
-                _ => panic!("unknown op"),
+                '+' => Ok(left + right),
+                '*' => Ok(left * right),
+                _ => Err(format!("unknown op: {op}")),
             },
-            calc::Expr::Literal(n) => n,
-            calc::Expr::Paren(e) => e,
-        })
+            calc::Expr::Literal(n) => Ok(n),
+            calc::Expr::Paren(e) => Ok(e),
+        }
     }
 }
 ```
 
-Action methods return `Result` - the error type is declared as `type Error: From<ParseError>` on the `Types` trait.
+Action methods return `Result` — when actions are infallible, use `type Error = core::convert::Infallible`.
 
 This gives you:
 - Full IDE support in action code (autocomplete, type hints, go-to-definition)
@@ -245,7 +263,7 @@ assignment_expression = cast_expression
 ## Usage
 
 ```rust
-use gazelle::{ParseError, Precedence};
+use gazelle::Precedence;
 use gazelle_macros::gazelle;
 
 gazelle! {
@@ -265,20 +283,24 @@ gazelle! {
 
 struct Eval;
 
+impl gazelle::ErrorType for Eval {
+    type Error = core::convert::Infallible;
+}
+
 impl my_parser::Types for Eval {
-    type Error = ParseError;
     type Num = i32;
     type Op = char;
     type Expr = i32;
 }
 
 impl gazelle::Action<my_parser::Expr<Self>> for Eval {
-    fn build(&mut self, node: my_parser::Expr<Self>) -> Result<i32, ParseError> {
+    fn build(&mut self, node: my_parser::Expr<Self>) -> Result<i32, Self::Error> {
         Ok(match node {
             my_parser::Expr::Binop(l, op, r) => match op {
                 '+' => l + r, '*' => l * r, _ => 0,
             },
             my_parser::Expr::Num(n) => n,
+            my_parser::Expr::Paren(e) => e,
         })
     }
 }
