@@ -1,5 +1,8 @@
 [workspace]
 members = [".", "gazelle-macros"]
+# Nightly-only examples (require `#![feature(associated_type_defaults)]`).
+# Excluded so the default stable workspace build never touches them.
+exclude = ["nightly-examples"]
 
 [package]
 name = "gazelle-parser"

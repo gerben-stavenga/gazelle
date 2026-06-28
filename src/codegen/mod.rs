@@ -64,6 +64,13 @@ pub struct CodegenContext {
     /// Which trait impls to generate and add as bounds on associated types.
     /// Supported: "Debug", "Clone", "PartialEq", "Eq", "Hash", "Serialize", "Deserialize".
     pub derives: alloc::collections::BTreeSet<String>,
+
+    /// If true, emit associated-type defaults pointing at the generated AST
+    /// enums (`type Foo = Foo<Self>;`) for non-terminals that have a generated
+    /// enum. Requires the consuming crate to enable
+    /// `#![feature(associated_type_defaults)]` (nightly). Opt-in via the
+    /// `#[ast_defaults]` attribute on the `gazelle!` invocation.
+    pub ast_defaults: bool,
 }
 
 impl CodegenContext {
@@ -102,6 +109,7 @@ impl CodegenContext {
             expect_sr: grammar_def.expect_sr,
             terminal_patterns,
             derives: alloc::collections::BTreeSet::new(),
+            ast_defaults: false,
         })
     }
 

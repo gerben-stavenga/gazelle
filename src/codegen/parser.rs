@@ -444,6 +444,25 @@ fn generate_traits(
     // Build bounds for associated types based on derives
     let bounds = derive_bounds(ctx);
 
+    // When `#[ast_defaults]` is set, map each non-terminal's result type to its
+    // generated AST enum so we can emit `type Foo = Foo<Self>;` defaults. Only
+    // non-terminals that actually produce an enum (have `=> name` variants) get
+    // a default; directly-recursive ones still need a manual `Box<...>` override.
+    let mut result_to_enum = alloc::collections::BTreeMap::new();
+    if ctx.ast_defaults {
+        let mut seen = alloc::collections::BTreeSet::new();
+        for info in reductions {
+            if info.variant_name.is_some() && seen.insert(&info.non_terminal) {
+                if let Some((_, result_type)) = typed_non_terminals
+                    .iter()
+                    .find(|(n, _)| n == &info.non_terminal)
+                {
+                    result_to_enum.insert(result_type.as_str(), enum_name(&info.non_terminal));
+                }
+            }
+        }
+    }
+
     // Terminal associated types - use payload type name directly
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref())
@@ -458,7 +477,11 @@ fn generate_traits(
     for (_, result_type) in typed_non_terminals {
         if seen_types.insert(result_type.as_str()) {
             let type_name = format_ident!("{}", result_type);
-            assoc_types.push(quote! { type #type_name #bounds; });
+            if let Some(enum_ident) = result_to_enum.get(result_type.as_str()) {
+                assoc_types.push(quote! { type #type_name #bounds = #enum_ident<Self>; });
+            } else {
+                assoc_types.push(quote! { type #type_name #bounds; });
+            }
         }
     }
 

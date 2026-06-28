@@ -77,12 +77,13 @@ pub fn gazelle(input: TokenStream) -> TokenStream {
 }
 
 fn parse_and_generate(input: proc_macro2::TokenStream) -> Result<proc_macro2::TokenStream, String> {
-    let (derives, visibility, name, source) = lex_token_stream(input)?;
+    let (derives, ast_defaults, visibility, name, source) = lex_token_stream(input)?;
 
     let apply_derives = |ctx: &mut gazelle::codegen::CodegenContext| {
         for d in &derives {
             ctx.derives.insert(d.clone());
         }
+        ctx.ast_defaults = ast_defaults;
     };
 
     let grammar_def = match source {
@@ -141,12 +142,13 @@ enum GrammarSource {
 ///   `[#[derive(Debug, Clone)]] [pub] grammar Name = "path/to/file.gzl"`     — file include
 fn lex_token_stream(
     input: proc_macro2::TokenStream,
-) -> Result<(Vec<String>, String, String, GrammarSource), String> {
+) -> Result<(Vec<String>, bool, String, String, GrammarSource), String> {
     let mut iter = input.into_iter().peekable();
 
-    // Check for #[derive(...)] attribute
+    // Check for attributes: `#[derive(...)]` and `#[ast_defaults]` (any order).
     let mut derives = Vec::new();
-    if matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '#') {
+    let mut ast_defaults = false;
+    while matches!(iter.peek(), Some(TokenTree::Punct(p)) if p.as_char() == '#') {
         iter.next(); // consume '#'
         match iter.next() {
             Some(TokenTree::Group(g))
@@ -154,24 +156,29 @@ fn lex_token_stream(
             {
                 let mut attr_iter = g.stream().into_iter().peekable();
                 match attr_iter.next() {
-                    Some(TokenTree::Ident(id)) if id == "derive" => {}
-                    other => {
-                        return Err(format!("Expected `derive` in attribute, got {:?}", other));
-                    }
-                }
-                match attr_iter.next() {
-                    Some(TokenTree::Group(g2))
-                        if matches!(g2.delimiter(), proc_macro2::Delimiter::Parenthesis) =>
-                    {
-                        for tt in g2.stream() {
-                            if let TokenTree::Ident(id) = tt {
-                                derives.push(id.to_string());
+                    Some(TokenTree::Ident(id)) if id == "derive" => match attr_iter.next() {
+                        Some(TokenTree::Group(g2))
+                            if matches!(g2.delimiter(), proc_macro2::Delimiter::Parenthesis) =>
+                        {
+                            for tt in g2.stream() {
+                                if let TokenTree::Ident(id) = tt {
+                                    derives.push(id.to_string());
+                                }
+                                // skip commas
                             }
-                            // skip commas
                         }
+                        other => {
+                            return Err(format!("Expected `(...)` after `derive`, got {:?}", other));
+                        }
+                    },
+                    Some(TokenTree::Ident(id)) if id == "ast_defaults" => {
+                        ast_defaults = true;
                     }
                     other => {
-                        return Err(format!("Expected `(...)` after `derive`, got {:?}", other));
+                        return Err(format!(
+                            "Expected `derive` or `ast_defaults` in attribute, got {:?}",
+                            other
+                        ));
                     }
                 }
             }
@@ -221,7 +228,13 @@ fn lex_token_stream(
                 // Strip surrounding quotes
                 if s.starts_with('"') && s.ends_with('"') {
                     let path = s[1..s.len() - 1].to_string();
-                    return Ok((derives, visibility, name, GrammarSource::File(path)));
+                    return Ok((
+                        derives,
+                        ast_defaults,
+                        visibility,
+                        name,
+                        GrammarSource::File(path),
+                    ));
                 }
                 return Err(format!("Expected string literal after `=`, got {}", s));
             }
@@ -246,7 +259,13 @@ fn lex_token_stream(
     let mut inner_iter = content.into_iter().peekable();
     lex_tokens(&mut inner_iter, &mut tokens)?;
 
-    Ok((derives, visibility, name, GrammarSource::Inline(tokens)))
+    Ok((
+        derives,
+        ast_defaults,
+        visibility,
+        name,
+        GrammarSource::Inline(tokens),
+    ))
 }
 
 fn unescape_string(s: &str) -> Result<String, String> {
