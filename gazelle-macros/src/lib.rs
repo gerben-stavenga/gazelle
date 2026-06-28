@@ -309,6 +309,7 @@ fn lex_tokens(
                         tokens.push(Terminal::Modifier(s));
                     }
                     "expect" => tokens.push(Terminal::KwExpect),
+                    "as" => tokens.push(Terminal::KwAs),
                     "_" => tokens.push(Terminal::Underscore),
                     _ => tokens.push(Terminal::Ident(s)),
                 }

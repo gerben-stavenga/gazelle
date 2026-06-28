@@ -380,3 +380,66 @@ fn test_file_include() {
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
 }
+
+// `* as Args`: a named sequence exposes a result-type knob, so the container is
+// the user's choice — here a non-Vec fold, built via the FromAstSeq blanket.
+gazelle! {
+    grammar nums {
+        start prog;
+        terminals {
+            NUM: _,
+            SEMI
+        }
+
+        prog = item* as Items => prog;
+        item = NUM SEMI => item;
+    }
+}
+
+#[derive(Default)]
+struct Sum(i32);
+
+impl Extend<i32> for Sum {
+    fn extend<T: IntoIterator<Item = i32>>(&mut self, it: T) {
+        self.0 += it.into_iter().sum::<i32>();
+    }
+}
+
+struct NumsActions;
+
+impl gazelle::ErrorType for NumsActions {
+    type Error = core::convert::Infallible;
+}
+
+impl nums::Types for NumsActions {
+    type Num = i32;
+    type Item = i32;
+    type Items = Sum; // the knob: a non-Vec container
+    type Prog = i32;
+}
+
+impl Action<nums::Item<Self>> for NumsActions {
+    fn build(&mut self, node: nums::Item<Self>) -> Result<i32, Self::Error> {
+        let nums::Item::Item(n) = node;
+        Ok(n)
+    }
+}
+
+impl Action<nums::Prog<Self>> for NumsActions {
+    fn build(&mut self, node: nums::Prog<Self>) -> Result<i32, Self::Error> {
+        let nums::Prog::Prog(items) = node;
+        Ok(items.0)
+    }
+}
+
+#[test]
+fn test_named_sequence_custom_container() {
+    let mut parser = nums::Parser::<NumsActions>::new();
+    let mut actions = NumsActions;
+    for n in [10, 20, 30] {
+        parser.push(nums::Terminal::Num(n), &mut actions).unwrap();
+        parser.push(nums::Terminal::Semi, &mut actions).unwrap();
+    }
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, 60); // folded into Sum via FromAstSeq, never a Vec
+}

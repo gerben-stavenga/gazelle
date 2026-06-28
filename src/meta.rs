@@ -130,9 +130,22 @@ impl gazelle::Action<Term<Self>> for AstBuilder {
                 sep,
                 name: None,
             },
+            Term::SymSepAs(symbol, sep, list) => grammar::Term::SeparatedBy {
+                symbol,
+                sep,
+                name: Some(list),
+            },
             Term::SymOpt(name) => grammar::Term::Optional(name),
             Term::SymStar(symbol) => grammar::Term::ZeroOrMore { symbol, name: None },
+            Term::SymStarAs(symbol, list) => grammar::Term::ZeroOrMore {
+                symbol,
+                name: Some(list),
+            },
             Term::SymPlus(symbol) => grammar::Term::OneOrMore { symbol, name: None },
+            Term::SymPlusAs(symbol, list) => grammar::Term::OneOrMore {
+                symbol,
+                name: Some(list),
+            },
             Term::SymPlain(name) => grammar::Term::Symbol(name),
             Term::SymEmpty => grammar::Term::Empty,
         })
@@ -167,6 +180,7 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                 "terminals" => Terminal::KwTerminals,
                 "prec" | "shift" | "reduce" | "conflict" => Terminal::Modifier(s.to_string()),
                 "expect" => Terminal::KwExpect,
+                "as" => Terminal::KwAs,
 
                 "_" => Terminal::Underscore,
                 _ => Terminal::Ident(s.to_string()),

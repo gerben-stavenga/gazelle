@@ -97,24 +97,21 @@ where
 /// for `*`/`+` never names a concrete container — it calls `empty`/`append`, so
 /// the target type is entirely the user's choice.
 ///
-/// The blanket impl covers any `Default + Extend<E>` target (`Vec`, `SmallVec`,
-/// `String`, …), so those collect with no user code, for any reducer — the fold
-/// never touches the reducer. A target that needs reducer context (e.g. arena
-/// allocation) is not `Default + Extend`, so it falls through to a hand-written
-/// reduction with `&mut self`, exactly as a non-trivial `Output` falls through
-/// the `FromAstNode` blanket to a custom `Action`.
-pub trait FromAstSeq<E> {
-    /// The empty sequence (start of the fold).
-    fn empty() -> Self;
+/// The empty sequence is `Default::default()` (hence the `Default` supertrait);
+/// `append` adds one element. The blanket impl covers any `Default + Extend<E>`
+/// target (`Vec`, `SmallVec`, `String`, …), so those collect with no user code,
+/// for any reducer — the fold never touches the reducer. A target that needs
+/// reducer context (e.g. arena allocation) is not `Default + Extend`, so it
+/// falls through to a hand-written reduction with `&mut self`, exactly as a
+/// non-trivial `Output` falls through the `FromAstNode` blanket to a custom
+/// `Action`.
+pub trait FromAstSeq<E>: Default {
     /// Append one element to the sequence.
     fn append(self, elem: E) -> Self;
 }
 
 /// Blanket: anything `Default + Extend<E>` folds for free, for any reducer.
 impl<E, S: Default + Extend<E>> FromAstSeq<E> for S {
-    fn empty() -> Self {
-        S::default()
-    }
     fn append(mut self, elem: E) -> Self {
         self.extend(core::iter::once(elem));
         self
@@ -1671,9 +1668,9 @@ mod tests {
     use crate::grammar::SymbolId;
     use crate::table::CompiledTable;
 
-    // Fold a few elements the way `*`/`+` codegen will: empty(), then append().
+    // Fold a few elements the way `*`/`+` codegen will: default(), then append().
     fn fold_seq<E, S: FromAstSeq<E>>(elems: impl IntoIterator<Item = E>) -> S {
-        let mut acc = S::empty();
+        let mut acc = S::default();
         for e in elems {
             acc = acc.append(e);
         }
@@ -1687,10 +1684,7 @@ mod tests {
         let v: Vec<i32> = fold_seq([1, 2, 3]);
         assert_eq!(v, vec![1, 2, 3]);
 
-        // Element type is qualified, as codegen always emits it (`Vec<T>: Copy`
-        // satisfies both `Extend<T>` and `Extend<&T>`, so a bare `empty()` is
-        // ambiguous — never an issue in generated code, which knows the element).
-        let empty = <Vec<i32> as FromAstSeq<i32>>::empty();
+        let empty: Vec<i32> = Default::default();
         assert!(empty.is_empty());
     }
 

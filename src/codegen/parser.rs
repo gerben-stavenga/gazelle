@@ -364,6 +364,27 @@ fn generate_nonterminal_enums(
     quote! { #(#enums)* }
 }
 
+/// The element type of a sequence symbol, `Self`-prefixed, for the `FromAstSeq`
+/// where-bound on the `Types` trait. Untyped symbols contribute `()`.
+fn element_self_type(
+    sym: &reduction::SymbolInfo,
+    nt_result_types: &alloc::collections::BTreeMap<&str, &str>,
+    terminal_assoc_types: &alloc::collections::BTreeMap<&str, &str>,
+) -> TokenStream {
+    let assoc = if sym.kind == SymbolKind::NonTerminal {
+        nt_result_types.get(sym.name.as_str())
+    } else {
+        terminal_assoc_types.get(sym.name.as_str())
+    };
+    match assoc {
+        Some(name) => {
+            let ident = format_ident!("{}", name);
+            quote! { Self::#ident }
+        }
+        None => quote! { () },
+    }
+}
+
 /// Convert a symbol to its field type tokens for use in an enum variant.
 fn symbol_to_field_type(
     sym: &reduction::SymbolInfo,
@@ -517,10 +538,52 @@ fn generate_traits(
         }
     }
 
+    // `FromAstSeq` bounds for named sequences (`* as Args`): a named list's
+    // result type is the user's container, built by a direct `FromAstSeq` call
+    // in the generic reduce fn, so the trait must require
+    // `Self::Args: FromAstSeq<Self::Elem>`. (Anonymous `*` uses a concrete
+    // `Vec<..>` that already satisfies this for every reducer.)
+    let nt_result_types: alloc::collections::BTreeMap<&str, &str> = typed_non_terminals
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
+    let terminal_assoc_types: alloc::collections::BTreeMap<&str, &str> = ctx
+        .grammar
+        .symbols
+        .terminal_ids()
+        .skip(1)
+        .filter_map(|id| {
+            let t = ctx.grammar.types.get(&id)?.as_ref()?;
+            Some((ctx.grammar.symbols.name(id), t.as_str()))
+        })
+        .collect();
+    let mut seq_bounds = Vec::new();
+    let mut seen_seq = alloc::collections::BTreeSet::new();
+    for info in reductions {
+        if matches!(&info.action, AltAction::VecAppend)
+            && let Some((_, result_type)) = typed_non_terminals
+                .iter()
+                .find(|(n, _)| n == &info.non_terminal)
+            && seen_seq.insert(result_type.as_str())
+            && let Some(elem) = info.rhs_symbols.last()
+        {
+            let list_ident = format_ident!("{}", result_type);
+            let elem_ty = element_self_type(elem, &nt_result_types, &terminal_assoc_types);
+            seq_bounds.push(quote! {
+                Self::#list_ident: #gazelle_crate_path::FromAstSeq<#elem_ty>
+            });
+        }
+    }
+    let where_clause = if seq_bounds.is_empty() {
+        quote! {}
+    } else {
+        quote! { where #(#seq_bounds),* }
+    };
+
     (
         quote! {
             /// Associated types for parser symbols.
-            #vis trait #types_trait: #gazelle_crate_path::ErrorType + Sized {
+            #vis trait #types_trait: #gazelle_crate_path::ErrorType + Sized #where_clause {
                 #(#assoc_types)*
 
                 /// Called before each reduction with the token range `[start..end)`.

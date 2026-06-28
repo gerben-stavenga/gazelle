@@ -343,6 +343,33 @@ fn resolve(symbols: &SymbolTable, name: &str) -> Result<Symbol, String> {
         .ok_or_else(|| format!("Unknown symbol: {}", name))
 }
 
+/// Intern the non-terminal for a repetition (`*`/`+`/`%`).
+///
+/// `* as Args` names the sequence: it becomes a real non-terminal `Args` whose
+/// result type is the knob `Args` (the user's container; defaults to `Vec` under
+/// `#[ast_defaults]`). An anonymous repetition is a `__`-synthetic with a
+/// concrete `Vec<inner>` type instead.
+fn list_non_terminal(
+    symbols: &mut SymbolTable,
+    types: &mut BTreeMap<SymbolId, Option<String>>,
+    list_name: &Option<String>,
+    synthetic: &str,
+    inner: Option<String>,
+) -> Symbol {
+    match list_name {
+        Some(list) => {
+            let lhs = symbols.intern_non_terminal(list);
+            types.insert(lhs.id(), Some(list.clone()));
+            lhs
+        }
+        None => {
+            let lhs = symbols.intern_non_terminal(synthetic);
+            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            lhs
+        }
+    }
+}
+
 fn resolve_term(
     term: &Term,
     symbols: &mut SymbolTable,
@@ -374,10 +401,10 @@ fn resolve_term(
             });
             lhs
         }
-        Term::ZeroOrMore { symbol: name, name: _list_name } => {
-            let lhs = symbols.intern_non_terminal(&format!("__{}_star", name.to_lowercase()));
+        Term::ZeroOrMore { symbol: name, name: list_name } => {
             let inner = lookup_type(name, symbols, types);
-            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            let synthetic = format!("__{}_star", name.to_lowercase());
+            let lhs = list_non_terminal(symbols, types, list_name, &synthetic, inner);
             let sym = resolve(symbols, name)?;
             rules.push(Rule {
                 lhs,
@@ -391,10 +418,10 @@ fn resolve_term(
             });
             lhs
         }
-        Term::OneOrMore { symbol: name, name: _list_name } => {
-            let lhs = symbols.intern_non_terminal(&format!("__{}_plus", name.to_lowercase()));
+        Term::OneOrMore { symbol: name, name: list_name } => {
             let inner = lookup_type(name, symbols, types);
-            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            let synthetic = format!("__{}_plus", name.to_lowercase());
+            let lhs = list_non_terminal(symbols, types, list_name, &synthetic, inner);
             let sym = resolve(symbols, name)?;
             rules.push(Rule {
                 lhs,
@@ -408,14 +435,10 @@ fn resolve_term(
             });
             lhs
         }
-        Term::SeparatedBy { symbol, sep, name: _list_name } => {
-            let lhs = symbols.intern_non_terminal(&format!(
-                "__{}_sep_{}",
-                symbol.to_lowercase(),
-                sep.to_lowercase()
-            ));
+        Term::SeparatedBy { symbol, sep, name: list_name } => {
             let inner = lookup_type(symbol, symbols, types);
-            types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
+            let synthetic = format!("__{}_sep_{}", symbol.to_lowercase(), sep.to_lowercase());
+            let lhs = list_non_terminal(symbols, types, list_name, &synthetic, inner);
             let sym = resolve(symbols, symbol)?;
             let sep_sym = resolve(symbols, sep)?;
             rules.push(Rule {
