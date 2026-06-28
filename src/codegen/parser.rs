@@ -484,6 +484,38 @@ fn generate_traits(
         }
     }
 
+    // Maps for resolving a named sequence's element type — used both for the
+    // `FromAstSeq` where-bound and the `#[ast_defaults]` `Vec` default. A named
+    // list (`* as Args`) is a typed NT with a `VecAppend` reduction; the element
+    // is that reduction's last symbol. (Anonymous `__`-lists aren't typed NTs.)
+    let nt_result_types: alloc::collections::BTreeMap<&str, &str> = typed_non_terminals
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
+    let terminal_assoc_types: alloc::collections::BTreeMap<&str, &str> = ctx
+        .grammar
+        .symbols
+        .terminal_ids()
+        .skip(1)
+        .filter_map(|id| {
+            let t = ctx.grammar.types.get(&id)?.as_ref()?;
+            Some((ctx.grammar.symbols.name(id), t.as_str()))
+        })
+        .collect();
+    let mut result_to_vec_elem = alloc::collections::BTreeMap::new();
+    for info in reductions {
+        if matches!(&info.action, AltAction::VecAppend)
+            && let Some((_, result_type)) = typed_non_terminals
+                .iter()
+                .find(|(n, _)| n == &info.non_terminal)
+            && let Some(elem) = info.rhs_symbols.last()
+        {
+            result_to_vec_elem.entry(result_type.as_str()).or_insert_with(|| {
+                element_self_type(elem, &nt_result_types, &terminal_assoc_types)
+            });
+        }
+    }
+
     // Terminal associated types - use payload type name directly
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref())
@@ -500,6 +532,11 @@ fn generate_traits(
             let type_name = format_ident!("{}", result_type);
             if let Some(enum_ident) = result_to_enum.get(result_type.as_str()) {
                 assoc_types.push(quote! { type #type_name #bounds = #enum_ident<Self>; });
+            } else if ctx.ast_defaults
+                && let Some(elem) = result_to_vec_elem.get(result_type.as_str())
+            {
+                // Named sequence: default the knob to `Vec<Elem>` (nightly).
+                assoc_types.push(quote! { type #type_name #bounds = Vec<#elem>; });
             } else {
                 assoc_types.push(quote! { type #type_name #bounds; });
             }
@@ -538,42 +575,18 @@ fn generate_traits(
         }
     }
 
-    // `FromAstSeq` bounds for named sequences (`* as Args`): a named list's
-    // result type is the user's container, built by a direct `FromAstSeq` call
-    // in the generic reduce fn, so the trait must require
+    // `FromAstSeq` where-bound for each named sequence (`* as Args`): the named
+    // list's result type is the user's container, built by a direct `FromAstSeq`
+    // call in the generic reduce fn, so the trait must require
     // `Self::Args: FromAstSeq<Self::Elem>`. (Anonymous `*` uses a concrete
     // `Vec<..>` that already satisfies this for every reducer.)
-    let nt_result_types: alloc::collections::BTreeMap<&str, &str> = typed_non_terminals
+    let seq_bounds: Vec<_> = result_to_vec_elem
         .iter()
-        .map(|(n, r)| (n.as_str(), r.as_str()))
-        .collect();
-    let terminal_assoc_types: alloc::collections::BTreeMap<&str, &str> = ctx
-        .grammar
-        .symbols
-        .terminal_ids()
-        .skip(1)
-        .filter_map(|id| {
-            let t = ctx.grammar.types.get(&id)?.as_ref()?;
-            Some((ctx.grammar.symbols.name(id), t.as_str()))
+        .map(|(result_type, elem)| {
+            let list_ident = format_ident!("{}", result_type);
+            quote! { Self::#list_ident: #gazelle_crate_path::FromAstSeq<#elem> }
         })
         .collect();
-    let mut seq_bounds = Vec::new();
-    let mut seen_seq = alloc::collections::BTreeSet::new();
-    for info in reductions {
-        if matches!(&info.action, AltAction::VecAppend)
-            && let Some((_, result_type)) = typed_non_terminals
-                .iter()
-                .find(|(n, _)| n == &info.non_terminal)
-            && seen_seq.insert(result_type.as_str())
-            && let Some(elem) = info.rhs_symbols.last()
-        {
-            let list_ident = format_ident!("{}", result_type);
-            let elem_ty = element_self_type(elem, &nt_result_types, &terminal_assoc_types);
-            seq_bounds.push(quote! {
-                Self::#list_ident: #gazelle_crate_path::FromAstSeq<#elem_ty>
-            });
-        }
-    }
     let where_clause = if seq_bounds.is_empty() {
         quote! {}
     } else {
