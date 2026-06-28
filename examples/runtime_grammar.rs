@@ -57,9 +57,9 @@ fn print_tree(tree: &Cst, indent: usize, compiled: &CompiledTable, values: &[Opt
         Cst::Leaf {
             symbol,
             token_index,
-        } => match values.get(token_index).and_then(|v| v.as_ref()) {
-            Some(v) => println!("{}{}:{}", pad, compiled.symbol_name(symbol), v),
-            None => println!("{}{}", pad, compiled.symbol_name(symbol)),
+        } => match values.get(token_index) {
+            Some(Some(v)) => println!("{}{}:{}", pad, compiled.symbol_name(symbol), v),
+            _ => println!("{}{}", pad, compiled.symbol_name(symbol)),
         },
         Cst::Node { rule, ref children } => {
             let name = compiled.rule_name(rule).unwrap_or("?");
