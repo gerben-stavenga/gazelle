@@ -2517,12 +2517,10 @@ impl<
                         self.value_stack.pop().unwrap().____concat_sep_pipe,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v2);
-                    __Value {
-                        ____concat_sep_pipe: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____concat_sep_pipe: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v2),
+                    ),
                 }
             }
             1usize => {
@@ -2532,7 +2530,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____concat_sep_pipe: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____concat_sep_pipe: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             2usize => {
@@ -2558,12 +2561,10 @@ impl<
                         self.value_stack.pop().unwrap().____repetition_plus,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____repetition_plus: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____repetition_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v1),
+                    ),
                 }
             }
             4usize => {
@@ -2573,7 +2574,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____repetition_plus: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____repetition_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             5usize => {
@@ -2743,12 +2749,10 @@ impl<
                         self.value_stack.pop().unwrap().____class_item_plus,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____class_item_plus: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____class_item_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v1),
+                    ),
                 }
             }
             21usize => {
@@ -2758,7 +2762,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____class_item_plus: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____class_item_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             22usize => {

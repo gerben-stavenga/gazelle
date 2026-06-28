@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use alloc::string::{String, ToString};
-use alloc::{format, vec, vec::Vec};
+use alloc::{format, vec::Vec};
 
 use crate as gazelle;
 use crate::grammar;

@@ -775,8 +775,12 @@ fn generate_reduction_arms(
                 AltAction::OptNone => {
                     quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(None) } }
                 }
+                // Sequence (`*`/`+`) building goes through `FromAstSeq` (and
+                // `Default` for the empty case, which is `FromAstSeq::empty`):
+                // codegen names no container, so the target type is the user's
+                // choice. The default target stays `Vec`, via the blanket impl.
                 AltAction::VecEmpty => {
-                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(Vec::new()) } }
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(core::default::Default::default()) } }
                 }
                 AltAction::VecSingle => {
                     let is_unit = info
@@ -784,11 +788,10 @@ fn generate_reduction_arms(
                         .first()
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
-                    if is_unit {
-                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(vec![()]) } }
-                    } else {
-                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(vec![v0]) } }
-                    }
+                    let elem = if is_unit { quote! { () } } else { quote! { v0 } };
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(
+                        #gazelle_crate_path::FromAstSeq::append(core::default::Default::default(), #elem)
+                    ) } }
                 }
                 AltAction::VecAppend => {
                     let last_idx = info.rhs_symbols.len() - 1;
@@ -797,12 +800,15 @@ fn generate_reduction_arms(
                         .get(last_idx)
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
-                    if is_unit {
-                        quote! { { let mut v0 = v0; v0.push(()); #value_union { #lhs_field: core::mem::ManuallyDrop::new(v0) } } }
+                    let elem = if is_unit {
+                        quote! { () }
                     } else {
                         let elem_var = format_ident!("v{}", last_idx);
-                        quote! { { let mut v0 = v0; v0.push(#elem_var); #value_union { #lhs_field: core::mem::ManuallyDrop::new(v0) } } }
-                    }
+                        quote! { #elem_var }
+                    };
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(
+                        #gazelle_crate_path::FromAstSeq::append(v0, #elem)
+                    ) } }
                 }
             }
         };

@@ -1204,17 +1204,17 @@ impl<
                         self.value_stack.pop().unwrap().____expect_decl_star,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____expect_decl_star: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____expect_decl_star: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v1),
+                    ),
                 }
             }
             1usize => {
                 __Value {
-                    ____expect_decl_star: core::mem::ManuallyDrop::new(Vec::new()),
+                    ____expect_decl_star: core::mem::ManuallyDrop::new(
+                        core::default::Default::default(),
+                    ),
                 }
             }
             2usize => {
@@ -1229,12 +1229,10 @@ impl<
                         self.value_stack.pop().unwrap().____terminal_item_sep_comma,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v2);
-                    __Value {
-                        ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v2),
+                    ),
                 }
             }
             3usize => {
@@ -1244,7 +1242,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             4usize => {
@@ -1258,12 +1261,10 @@ impl<
                         self.value_stack.pop().unwrap().____rule_plus,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____rule_plus: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____rule_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v1),
+                    ),
                 }
             }
             5usize => {
@@ -1273,7 +1274,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____rule_plus: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____rule_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             6usize => {
@@ -1439,12 +1445,10 @@ impl<
                         self.value_stack.pop().unwrap().____alt_sep_pipe,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v2);
-                    __Value {
-                        ____alt_sep_pipe: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____alt_sep_pipe: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v2),
+                    ),
                 }
             }
             18usize => {
@@ -1454,7 +1458,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____alt_sep_pipe: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____alt_sep_pipe: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             19usize => {
@@ -1487,12 +1496,10 @@ impl<
                         self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____term_plus: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____term_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(v0, v1),
+                    ),
                 }
             }
             21usize => {
@@ -1502,7 +1509,12 @@ impl<
                     )
                 };
                 __Value {
-                    ____term_plus: core::mem::ManuallyDrop::new(vec![v0]),
+                    ____term_plus: core::mem::ManuallyDrop::new(
+                        gazelle::FromAstSeq::append(
+                            core::default::Default::default(),
+                            v0,
+                        ),
+                    ),
                 }
             }
             22usize => {
