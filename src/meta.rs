@@ -125,10 +125,14 @@ impl gazelle::Action<Alt<Self>> for AstBuilder {
 impl gazelle::Action<Term<Self>> for AstBuilder {
     fn build(&mut self, node: Term<Self>) -> Result<grammar::Term, Self::Error> {
         Ok(match node {
-            Term::SymSep(name, sep) => grammar::Term::SeparatedBy { symbol: name, sep },
+            Term::SymSep(symbol, sep) => grammar::Term::SeparatedBy {
+                symbol,
+                sep,
+                name: None,
+            },
             Term::SymOpt(name) => grammar::Term::Optional(name),
-            Term::SymStar(name) => grammar::Term::ZeroOrMore(name),
-            Term::SymPlus(name) => grammar::Term::OneOrMore(name),
+            Term::SymStar(symbol) => grammar::Term::ZeroOrMore { symbol, name: None },
+            Term::SymPlus(symbol) => grammar::Term::OneOrMore { symbol, name: None },
             Term::SymPlain(name) => grammar::Term::Symbol(name),
             Term::SymEmpty => grammar::Term::Empty,
         })
@@ -313,6 +317,7 @@ pub fn parse_grammar(input: &str) -> Result<grammar::Grammar, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use crate::lr::to_grammar_internal;
 
     #[test]
@@ -493,11 +498,11 @@ mod tests {
         );
         assert_eq!(
             grammar.rules[0].alts[0].terms[1],
-            grammar::Term::ZeroOrMore("B".to_string())
+            grammar::Term::ZeroOrMore { symbol: "B".to_string(), name: None }
         );
         assert_eq!(
             grammar.rules[0].alts[0].terms[2],
-            grammar::Term::OneOrMore("C".to_string())
+            grammar::Term::OneOrMore { symbol: "C".to_string(), name: None }
         );
     }
 
@@ -687,7 +692,8 @@ mod tests {
             grammar.rules[0].alts[0].terms[0],
             grammar::Term::SeparatedBy {
                 symbol: "A".to_string(),
-                sep: "COMMA".to_string()
+                sep: "COMMA".to_string(),
+                name: None
             }
         );
     }

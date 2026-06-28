@@ -374,7 +374,7 @@ fn resolve_term(
             });
             lhs
         }
-        Term::ZeroOrMore(name) => {
+        Term::ZeroOrMore { symbol: name, name: _list_name } => {
             let lhs = symbols.intern_non_terminal(&format!("__{}_star", name.to_lowercase()));
             let inner = lookup_type(name, symbols, types);
             types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
@@ -391,7 +391,7 @@ fn resolve_term(
             });
             lhs
         }
-        Term::OneOrMore(name) => {
+        Term::OneOrMore { symbol: name, name: _list_name } => {
             let lhs = symbols.intern_non_terminal(&format!("__{}_plus", name.to_lowercase()));
             let inner = lookup_type(name, symbols, types);
             types.insert(lhs.id(), inner.map(|t| format!("Vec<{}>", t)));
@@ -408,7 +408,7 @@ fn resolve_term(
             });
             lhs
         }
-        Term::SeparatedBy { symbol, sep } => {
+        Term::SeparatedBy { symbol, sep, name: _list_name } => {
             let lhs = symbols.intern_non_terminal(&format!(
                 "__{}_sep_{}",
                 symbol.to_lowercase(),
