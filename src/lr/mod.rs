@@ -401,7 +401,10 @@ fn resolve_term(
             });
             lhs
         }
-        Term::ZeroOrMore { symbol: name, name: list_name } => {
+        Term::ZeroOrMore {
+            symbol: name,
+            name: list_name,
+        } => {
             let inner = lookup_type(name, symbols, types);
             let synthetic = format!("__{}_star", name.to_lowercase());
             let lhs = list_non_terminal(symbols, types, list_name, &synthetic, inner);
@@ -418,7 +421,10 @@ fn resolve_term(
             });
             lhs
         }
-        Term::OneOrMore { symbol: name, name: list_name } => {
+        Term::OneOrMore {
+            symbol: name,
+            name: list_name,
+        } => {
             let inner = lookup_type(name, symbols, types);
             let synthetic = format!("__{}_plus", name.to_lowercase());
             let lhs = list_non_terminal(symbols, types, list_name, &synthetic, inner);
@@ -435,7 +441,11 @@ fn resolve_term(
             });
             lhs
         }
-        Term::SeparatedBy { symbol, sep, name: list_name } => {
+        Term::SeparatedBy {
+            symbol,
+            sep,
+            name: list_name,
+        } => {
             let inner = lookup_type(symbol, symbols, types);
             let synthetic = format!("__{}_sep_{}", symbol.to_lowercase(), sep.to_lowercase());
             let lhs = list_non_terminal(symbols, types, list_name, &synthetic, inner);

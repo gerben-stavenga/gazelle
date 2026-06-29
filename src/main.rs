@@ -345,7 +345,10 @@ fn do_bootstrap_meta() {
                         g::Term::Symbol("KW_START".into()),
                         g::Term::Symbol("IDENT".into()),
                         g::Term::Symbol("SEMI".into()),
-                        g::Term::ZeroOrMore { symbol: "expect_decl".into(), name: None },
+                        g::Term::ZeroOrMore {
+                            symbol: "expect_decl".into(),
+                            name: None,
+                        },
                         g::Term::Symbol("KW_TERMINALS".into()),
                         g::Term::Symbol("LBRACE".into()),
                         g::Term::SeparatedBy {
@@ -354,7 +357,10 @@ fn do_bootstrap_meta() {
                             name: None,
                         },
                         g::Term::Symbol("RBRACE".into()),
-                        g::Term::OneOrMore { symbol: "rule".into(), name: None },
+                        g::Term::OneOrMore {
+                            symbol: "rule".into(),
+                            name: None,
+                        },
                     ],
                     name: "grammar_def".into(),
                 }],
@@ -423,7 +429,10 @@ fn do_bootstrap_meta() {
                 name: "alt".into(),
                 alts: vec![g::Alt {
                     terms: vec![
-                        g::Term::OneOrMore { symbol: "term".into(), name: None },
+                        g::Term::OneOrMore {
+                            symbol: "term".into(),
+                            name: None,
+                        },
                         g::Term::Symbol("variant".into()),
                     ],
                     name: "alt".into(),

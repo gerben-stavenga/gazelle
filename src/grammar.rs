@@ -97,9 +97,15 @@ pub enum Term {
     /// `*` - zero or more. `name` is the optional `as Name` knob: when set, the
     /// sequence is a named non-terminal with associated type `Name` (the user's
     /// container) instead of an anonymous `Vec`.
-    ZeroOrMore { symbol: String, name: Option<String> },
+    ZeroOrMore {
+        symbol: String,
+        name: Option<String>,
+    },
     /// `+` - one or more. `name` as in [`Term::ZeroOrMore`].
-    OneOrMore { symbol: String, name: Option<String> },
+    OneOrMore {
+        symbol: String,
+        name: Option<String>,
+    },
     /// `%` - one or more separated by the given symbol. `name` as above.
     SeparatedBy {
         symbol: String,

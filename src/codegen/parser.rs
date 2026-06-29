@@ -561,7 +561,12 @@ fn generate_traits(
             });
             result_to_vec_elem.insert(
                 result_type.as_str(),
-                element_assoc_type(elem, &nt_result_types, &terminal_assoc_types, &quote! { Self }),
+                element_assoc_type(
+                    elem,
+                    &nt_result_types,
+                    &terminal_assoc_types,
+                    &quote! { Self },
+                ),
             );
         }
     }
@@ -948,7 +953,11 @@ fn generate_reduction_arms(
                         .first()
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
-                    let single_elem = if is_unit { quote! { () } } else { quote! { v0 } };
+                    let single_elem = if is_unit {
+                        quote! { () }
+                    } else {
+                        quote! { v0 }
+                    };
                     let (s_ty, e_ty) = list_nt_se
                         .get(info.non_terminal.as_str())
                         .cloned()

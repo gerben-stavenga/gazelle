@@ -168,7 +168,10 @@ fn lex_token_stream(
                             }
                         }
                         other => {
-                            return Err(format!("Expected `(...)` after `derive`, got {:?}", other));
+                            return Err(format!(
+                                "Expected `(...)` after `derive`, got {:?}",
+                                other
+                            ));
                         }
                     },
                     Some(TokenTree::Ident(id)) if id == "ast_defaults" => {

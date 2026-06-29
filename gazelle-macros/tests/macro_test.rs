@@ -453,7 +453,6 @@ fn test_named_sequence_custom_fold() {
     assert!(actions.folds >= 4); // Empty + 3 Appends, all through &mut self
 }
 
-
 // Custom fold: spell the repetition as an explicit rule instead of `NUM*`.
 // `sum` becomes a normal node you implement `Action` for — the fold logic is
 // yours (here a running sum, not even a container), with &mut self available.

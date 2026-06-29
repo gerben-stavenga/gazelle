@@ -331,8 +331,8 @@ pub fn parse_grammar(input: &str) -> Result<grammar::Grammar, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use crate::lr::to_grammar_internal;
+    use alloc::vec;
 
     #[test]
     fn test_lex() {
@@ -512,11 +512,17 @@ mod tests {
         );
         assert_eq!(
             grammar.rules[0].alts[0].terms[1],
-            grammar::Term::ZeroOrMore { symbol: "B".to_string(), name: None }
+            grammar::Term::ZeroOrMore {
+                symbol: "B".to_string(),
+                name: None
+            }
         );
         assert_eq!(
             grammar.rules[0].alts[0].terms[2],
-            grammar::Term::OneOrMore { symbol: "C".to_string(), name: None }
+            grammar::Term::OneOrMore {
+                symbol: "C".to_string(),
+                name: None
+            }
         );
     }
 
