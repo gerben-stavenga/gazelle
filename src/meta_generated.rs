@@ -989,6 +989,25 @@ pub enum TypeAnnot<A: Types> {
 pub enum Variant<A: Types> {
     Variant(A::Ident),
 }
+#[doc(hidden)]
+pub enum SeqNode<S, E> {
+    Empty,
+    Append(S, E),
+}
+impl<S, E> gazelle::AstNode for SeqNode<S, E> {
+    type Output = S;
+}
+impl<E> gazelle::FromAstNode<SeqNode<Vec<E>, E>> for Vec<E> {
+    fn from(node: SeqNode<Vec<E>, E>) -> Vec<E> {
+        match node {
+            SeqNode::Empty => Vec::new(),
+            SeqNode::Append(mut acc, elem) => {
+                acc.push(elem);
+                acc
+            }
+        }
+    }
+}
 /// Associated types for parser symbols.
 pub trait Types: gazelle::ErrorType + Sized {
     type Ident;
@@ -1350,14 +1369,18 @@ impl<
                 };
                 __Value {
                     ____expect_decl_star: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(v0, v1),
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::ExpectDecl>, A::ExpectDecl>,
+                        >>::build(actions, SeqNode::Append(v0, v1))?,
                     ),
                 }
             }
             1usize => {
                 __Value {
                     ____expect_decl_star: core::mem::ManuallyDrop::new(
-                        core::default::Default::default(),
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::ExpectDecl>, A::ExpectDecl>,
+                        >>::build(actions, SeqNode::Empty)?,
                     ),
                 }
             }
@@ -1375,7 +1398,9 @@ impl<
                 };
                 __Value {
                     ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(v0, v2),
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::TerminalItem>, A::TerminalItem>,
+                        >>::build(actions, SeqNode::Append(v0, v2))?,
                     ),
                 }
             }
@@ -1385,13 +1410,17 @@ impl<
                         self.value_stack.pop().unwrap().__terminal_item,
                     )
                 };
-                __Value {
-                    ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(
-                            core::default::Default::default(),
-                            v0,
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::TerminalItem>, A::TerminalItem>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::TerminalItem>, A::TerminalItem>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
                         ),
-                    ),
+                    }
                 }
             }
             4usize => {
@@ -1407,7 +1436,9 @@ impl<
                 };
                 __Value {
                     ____rule_plus: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(v0, v1),
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::Rule>, A::Rule>,
+                        >>::build(actions, SeqNode::Append(v0, v1))?,
                     ),
                 }
             }
@@ -1417,13 +1448,17 @@ impl<
                         self.value_stack.pop().unwrap().__rule,
                     )
                 };
-                __Value {
-                    ____rule_plus: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(
-                            core::default::Default::default(),
-                            v0,
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::Rule>, A::Rule>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____rule_plus: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::Rule>, A::Rule>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
                         ),
-                    ),
+                    }
                 }
             }
             6usize => {
@@ -1591,7 +1626,9 @@ impl<
                 };
                 __Value {
                     ____alt_sep_pipe: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(v0, v2),
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::Alt>, A::Alt>,
+                        >>::build(actions, SeqNode::Append(v0, v2))?,
                     ),
                 }
             }
@@ -1601,13 +1638,17 @@ impl<
                         self.value_stack.pop().unwrap().__alt,
                     )
                 };
-                __Value {
-                    ____alt_sep_pipe: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(
-                            core::default::Default::default(),
-                            v0,
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::Alt>, A::Alt>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____alt_sep_pipe: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::Alt>, A::Alt>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
                         ),
-                    ),
+                    }
                 }
             }
             19usize => {
@@ -1642,7 +1683,9 @@ impl<
                 };
                 __Value {
                     ____term_plus: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(v0, v1),
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::Term>, A::Term>,
+                        >>::build(actions, SeqNode::Append(v0, v1))?,
                     ),
                 }
             }
@@ -1652,13 +1695,17 @@ impl<
                         self.value_stack.pop().unwrap().__term,
                     )
                 };
-                __Value {
-                    ____term_plus: core::mem::ManuallyDrop::new(
-                        gazelle::FromAstSeq::append(
-                            core::default::Default::default(),
-                            v0,
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::Term>, A::Term>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____term_plus: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::Term>, A::Term>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
                         ),
-                    ),
+                    }
                 }
             }
             22usize => {

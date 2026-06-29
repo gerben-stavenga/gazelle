@@ -90,34 +90,6 @@ where
     }
 }
 
-/// Build a sequence (`*` / `+` repetition) by folding elements into a target.
-///
-/// This is the sequence analogue of [`FromAstNode`]: instead of mapping one
-/// node to an output, it folds zero-or-more elements into a collection. Codegen
-/// for `*`/`+` never names a concrete container — it calls `empty`/`append`, so
-/// the target type is entirely the user's choice.
-///
-/// The empty sequence is `Default::default()` (hence the `Default` supertrait);
-/// `append` adds one element. The blanket impl covers any `Default + Extend<E>`
-/// target (`Vec`, `SmallVec`, `String`, …), so those collect with no user code,
-/// for any reducer — the fold never touches the reducer. A target that needs
-/// reducer context (e.g. arena allocation) is not `Default + Extend`, so it
-/// falls through to a hand-written reduction with `&mut self`, exactly as a
-/// non-trivial `Output` falls through the `FromAstNode` blanket to a custom
-/// `Action`.
-pub trait FromAstSeq<E>: Default {
-    /// Append one element to the sequence.
-    fn append(self, elem: E) -> Self;
-}
-
-/// Blanket: anything `Default + Extend<E>` folds for free, for any reducer.
-impl<E, S: Default + Extend<E>> FromAstSeq<E> for S {
-    fn append(mut self, elem: E) -> Self {
-        self.extend(core::iter::once(elem));
-        self
-    }
-}
-
 /// An operation instruction in the parse table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParserOp {
@@ -1667,46 +1639,6 @@ mod tests {
     use super::*;
     use crate::grammar::SymbolId;
     use crate::table::CompiledTable;
-
-    // Fold a few elements the way `*`/`+` codegen will: default(), then append().
-    fn fold_seq<E, S: FromAstSeq<E>>(elems: impl IntoIterator<Item = E>) -> S {
-        let mut acc = S::default();
-        for e in elems {
-            acc = acc.append(e);
-        }
-        acc
-    }
-
-    #[test]
-    fn from_ast_seq_builds_vec_in_order() {
-        // The default target: `Vec` collects via the `Default + Extend` blanket,
-        // no special code, preserving element order.
-        let v: Vec<i32> = fold_seq([1, 2, 3]);
-        assert_eq!(v, vec![1, 2, 3]);
-
-        let empty: Vec<i32> = Default::default();
-        assert!(empty.is_empty());
-    }
-
-    #[test]
-    fn from_ast_seq_builds_non_vec_target() {
-        // A different container reached purely by changing the target type —
-        // `String` is `Default + Extend<char>`, so it folds with no extra code.
-        let s: String = fold_seq(['g', 'a', 'z']);
-        assert_eq!(s, "gaz");
-
-        // And a user container that is `Default + Extend` works the same way,
-        // standing in for `SmallVec`/arena-vec/etc.
-        #[derive(Default)]
-        struct Counter(usize);
-        impl Extend<i32> for Counter {
-            fn extend<T: IntoIterator<Item = i32>>(&mut self, it: T) {
-                self.0 += it.into_iter().count();
-            }
-        }
-        let c: Counter = fold_seq([10, 20, 30, 40]);
-        assert_eq!(c.0, 4);
-    }
 
     #[test]
     fn test_action_entry_encoding() {

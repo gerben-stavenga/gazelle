@@ -107,8 +107,8 @@ pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
 pub use runtime::{
-    Action, AstNode, Cst, CstParser, ErrorContext, ErrorType, FromAstNode, FromAstSeq, Ignore,
-    ParseError, ParseTable, Parser, Precedence, RecoveryInfo, Repair, Resolution, Token,
+    Action, AstNode, Cst, CstParser, ErrorContext, ErrorType, FromAstNode, Ignore, ParseError,
+    ParseTable, Parser, Precedence, RecoveryInfo, Repair, Resolution, Token,
 };
 
 // Lexer DFA
