@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use alloc::string::{String, ToString};
-use alloc::{format, vec, vec::Vec};
+use alloc::{format, vec::Vec};
 
 use crate as gazelle;
 use crate::grammar;
@@ -125,10 +125,27 @@ impl gazelle::Action<Alt<Self>> for AstBuilder {
 impl gazelle::Action<Term<Self>> for AstBuilder {
     fn build(&mut self, node: Term<Self>) -> Result<grammar::Term, Self::Error> {
         Ok(match node {
-            Term::SymSep(name, sep) => grammar::Term::SeparatedBy { symbol: name, sep },
+            Term::SymSep(symbol, sep) => grammar::Term::SeparatedBy {
+                symbol,
+                sep,
+                name: None,
+            },
+            Term::SymSepAs(symbol, sep, list) => grammar::Term::SeparatedBy {
+                symbol,
+                sep,
+                name: Some(list),
+            },
             Term::SymOpt(name) => grammar::Term::Optional(name),
-            Term::SymStar(name) => grammar::Term::ZeroOrMore(name),
-            Term::SymPlus(name) => grammar::Term::OneOrMore(name),
+            Term::SymStar(symbol) => grammar::Term::ZeroOrMore { symbol, name: None },
+            Term::SymStarAs(symbol, list) => grammar::Term::ZeroOrMore {
+                symbol,
+                name: Some(list),
+            },
+            Term::SymPlus(symbol) => grammar::Term::OneOrMore { symbol, name: None },
+            Term::SymPlusAs(symbol, list) => grammar::Term::OneOrMore {
+                symbol,
+                name: Some(list),
+            },
             Term::SymPlain(name) => grammar::Term::Symbol(name),
             Term::SymEmpty => grammar::Term::Empty,
         })
@@ -163,6 +180,7 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                 "terminals" => Terminal::KwTerminals,
                 "prec" | "shift" | "reduce" | "conflict" => Terminal::Modifier(s.to_string()),
                 "expect" => Terminal::KwExpect,
+                "as" => Terminal::KwAs,
 
                 "_" => Terminal::Underscore,
                 _ => Terminal::Ident(s.to_string()),
@@ -314,6 +332,7 @@ pub fn parse_grammar(input: &str) -> Result<grammar::Grammar, String> {
 mod tests {
     use super::*;
     use crate::lr::to_grammar_internal;
+    use alloc::vec;
 
     #[test]
     fn test_lex() {
@@ -493,11 +512,17 @@ mod tests {
         );
         assert_eq!(
             grammar.rules[0].alts[0].terms[1],
-            grammar::Term::ZeroOrMore("B".to_string())
+            grammar::Term::ZeroOrMore {
+                symbol: "B".to_string(),
+                name: None
+            }
         );
         assert_eq!(
             grammar.rules[0].alts[0].terms[2],
-            grammar::Term::OneOrMore("C".to_string())
+            grammar::Term::OneOrMore {
+                symbol: "C".to_string(),
+                name: None
+            }
         );
     }
 
@@ -687,7 +712,8 @@ mod tests {
             grammar.rules[0].alts[0].terms[0],
             grammar::Term::SeparatedBy {
                 symbol: "A".to_string(),
-                sep: "COMMA".to_string()
+                sep: "COMMA".to_string(),
+                name: None
             }
         );
     }

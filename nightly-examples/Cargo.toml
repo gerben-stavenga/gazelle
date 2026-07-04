@@ -1,0 +1,17 @@
+# Own workspace root so it stays fully independent of the stable parent build.
+[workspace]
+
+[package]
+name = "gazelle-nightly-examples"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# These examples use `#[ast_defaults]`, which emits associated-type defaults
+# (`type Foo = Foo<Self>;`). That syntax requires nightly + the crate-root
+# `#![feature(associated_type_defaults)]`, so this package is kept out of the
+# main workspace and pins nightly via rust-toolchain.toml.
+
+[dependencies]
+gazelle = { path = "..", package = "gazelle-parser" }
+gazelle-macros = { path = "../gazelle-macros" }

@@ -94,12 +94,24 @@ pub enum Term {
     Symbol(String),
     /// `?` - optional (zero or one).
     Optional(String),
-    /// `*` - zero or more.
-    ZeroOrMore(String),
-    /// `+` - one or more.
-    OneOrMore(String),
-    /// `%` - one or more separated by the given symbol.
-    SeparatedBy { symbol: String, sep: String },
+    /// `*` - zero or more. `name` is the optional `as Name` knob: when set, the
+    /// sequence is a named non-terminal with associated type `Name` (the user's
+    /// container) instead of an anonymous `Vec`.
+    ZeroOrMore {
+        symbol: String,
+        name: Option<String>,
+    },
+    /// `+` - one or more. `name` as in [`Term::ZeroOrMore`].
+    OneOrMore {
+        symbol: String,
+        name: Option<String>,
+    },
+    /// `%` - one or more separated by the given symbol. `name` as above.
+    SeparatedBy {
+        symbol: String,
+        sep: String,
+        name: Option<String>,
+    },
     /// `_` - empty production marker.
     Empty,
 }

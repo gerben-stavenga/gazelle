@@ -128,8 +128,44 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         }
     };
 
+    // Repetition node, generated *locally* so a custom fold
+    // (`Action<SeqNode<MyContainer, E>>`) stays coherent with the default `Vec`
+    // build — a shared library type would make the custom impl conflict across
+    // crates. The default `Vec` build is a closed, orphan-legal impl; any other
+    // container is reached by the user's own `Action<SeqNode<..>>`.
+    let has_lists = reductions
+        .iter()
+        .any(|info| matches!(info.action, AltAction::VecAppend));
+    let seq_node_code = if has_lists {
+        quote! {
+            #[doc(hidden)]
+            #vis enum SeqNode<S, E> {
+                Empty,
+                Append(S, E),
+            }
+            impl<S, E> #gazelle_crate_path::AstNode for SeqNode<S, E> {
+                type Output = S;
+            }
+            impl<E> #gazelle_crate_path::FromAstNode<SeqNode<Vec<E>, E>> for Vec<E> {
+                fn from(node: SeqNode<Vec<E>, E>) -> Vec<E> {
+                    match node {
+                        SeqNode::Empty => Vec::new(),
+                        SeqNode::Append(mut acc, elem) => {
+                            acc.push(elem);
+                            acc
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        quote! {}
+    };
+
     Ok(quote! {
         #enum_code
+
+        #seq_node_code
 
         #traits_code
 
@@ -364,6 +400,28 @@ fn generate_nonterminal_enums(
     quote! { #(#enums)* }
 }
 
+/// The element type of a sequence symbol, qualified by `prefix` (`Self` for a
+/// trait default, `A` for a reducer bound). Untyped symbols contribute `()`.
+fn element_assoc_type(
+    sym: &reduction::SymbolInfo,
+    nt_result_types: &alloc::collections::BTreeMap<&str, &str>,
+    terminal_assoc_types: &alloc::collections::BTreeMap<&str, &str>,
+    prefix: &TokenStream,
+) -> TokenStream {
+    let assoc = if sym.kind == SymbolKind::NonTerminal {
+        nt_result_types.get(sym.name.as_str())
+    } else {
+        terminal_assoc_types.get(sym.name.as_str())
+    };
+    match assoc {
+        Some(name) => {
+            let ident = format_ident!("{}", name);
+            quote! { #prefix::#ident }
+        }
+        None => quote! { () },
+    }
+}
+
 /// Convert a symbol to its field type tokens for use in an enum variant.
 fn symbol_to_field_type(
     sym: &reduction::SymbolInfo,
@@ -444,6 +502,75 @@ fn generate_traits(
     // Build bounds for associated types based on derives
     let bounds = derive_bounds(ctx);
 
+    // When `#[ast_defaults]` is set, map each non-terminal's result type to its
+    // generated AST enum so we can emit `type Foo = Foo<Self>;` defaults. Only
+    // non-terminals that actually produce an enum (have `=> name` variants) get
+    // a default; directly-recursive ones still need a manual `Box<...>` override.
+    let mut result_to_enum = alloc::collections::BTreeMap::new();
+    if ctx.ast_defaults {
+        let mut seen = alloc::collections::BTreeSet::new();
+        for info in reductions {
+            if info.variant_name.is_some() && seen.insert(&info.non_terminal) {
+                if let Some((_, result_type)) = typed_non_terminals
+                    .iter()
+                    .find(|(n, _)| n == &info.non_terminal)
+                {
+                    result_to_enum.insert(result_type.as_str(), enum_name(&info.non_terminal));
+                }
+            }
+        }
+    }
+
+    // Maps for resolving a named sequence's element type — used both for the
+    // `FromAstSeq` where-bound and the `#[ast_defaults]` `Vec` default. A named
+    // list (`* as Args`) is a typed NT with a `VecAppend` reduction; the element
+    // is that reduction's last symbol. (Anonymous `__`-lists aren't typed NTs.)
+    let nt_result_types: alloc::collections::BTreeMap<&str, &str> = typed_non_terminals
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
+    let terminal_assoc_types: alloc::collections::BTreeMap<&str, &str> = ctx
+        .grammar
+        .symbols
+        .terminal_ids()
+        .skip(1)
+        .filter_map(|id| {
+            let t = ctx.grammar.types.get(&id)?.as_ref()?;
+            Some((ctx.grammar.symbols.name(id), t.as_str()))
+        })
+        .collect();
+    let mut reducer_bounds = Vec::new();
+    let mut result_to_vec_elem = alloc::collections::BTreeMap::new();
+    for info in reductions {
+        if matches!(&info.action, AltAction::VecAppend)
+            && let Some((_, result_type)) = typed_non_terminals
+                .iter()
+                .find(|(n, _)| n == &info.non_terminal)
+            && let Some(elem) = info.rhs_symbols.last()
+            && !result_to_vec_elem.contains_key(result_type.as_str())
+        {
+            // A named list dispatches through the same `Action` as every node —
+            // `A: Action<SeqNode<A::Args, A::Elem>>` — satisfied by the
+            // `FromAstNode` blanket for a `Default + Extend` container, or by a
+            // custom `Action` (arena) otherwise. No trait where-bound needed.
+            let result_ident = format_ident!("{}", result_type);
+            let elem_a =
+                element_assoc_type(elem, &nt_result_types, &terminal_assoc_types, &quote! { A });
+            reducer_bounds.push(quote! {
+                + #gazelle_crate_path::Action<SeqNode<A::#result_ident, #elem_a>>
+            });
+            result_to_vec_elem.insert(
+                result_type.as_str(),
+                element_assoc_type(
+                    elem,
+                    &nt_result_types,
+                    &terminal_assoc_types,
+                    &quote! { Self },
+                ),
+            );
+        }
+    }
+
     // Terminal associated types - use payload type name directly
     for id in ctx.grammar.symbols.terminal_ids().skip(1) {
         if let Some(type_name) = ctx.grammar.types.get(&id).and_then(|t| t.as_ref())
@@ -458,12 +585,20 @@ fn generate_traits(
     for (_, result_type) in typed_non_terminals {
         if seen_types.insert(result_type.as_str()) {
             let type_name = format_ident!("{}", result_type);
-            assoc_types.push(quote! { type #type_name #bounds; });
+            if let Some(enum_ident) = result_to_enum.get(result_type.as_str()) {
+                assoc_types.push(quote! { type #type_name #bounds = #enum_ident<Self>; });
+            } else if ctx.ast_defaults
+                && let Some(elem) = result_to_vec_elem.get(result_type.as_str())
+            {
+                // Named sequence: default the knob to `Vec<Elem>` (nightly).
+                assoc_types.push(quote! { type #type_name #bounds = Vec<#elem>; });
+            } else {
+                assoc_types.push(quote! { type #type_name #bounds; });
+            }
         }
     }
 
     // Collect AstNode impls and Action bounds for non-terminals with enum variants
-    let mut reducer_bounds = Vec::new();
     let mut ast_node_impls = Vec::new();
     let mut seen_nt = alloc::collections::BTreeSet::new();
     for info in reductions {
@@ -657,9 +792,53 @@ fn generate_reduction_arms(
     ctx: &CodegenContext,
     reductions: &[ReductionInfo],
     value_union: &syn::Ident,
-    _typed_non_terminals: &[(String, String)],
+    typed_non_terminals: &[(String, String)],
 ) -> Vec<TokenStream> {
     let gazelle_crate_path = ctx.gazelle_crate_path_tokens();
+
+    // Element type per list non-terminal (the `VecAppend` rule's last symbol),
+    // needed to spell `SeqNode::<_, Elem>::Empty` where there's no element value.
+    let nt_result_types: alloc::collections::BTreeMap<&str, &str> = typed_non_terminals
+        .iter()
+        .map(|(n, r)| (n.as_str(), r.as_str()))
+        .collect();
+    let terminal_assoc_types: alloc::collections::BTreeMap<&str, &str> = ctx
+        .grammar
+        .symbols
+        .terminal_ids()
+        .skip(1)
+        .filter_map(|id| {
+            let t = ctx.grammar.types.get(&id)?.as_ref()?;
+            Some((ctx.grammar.symbols.name(id), t.as_str()))
+        })
+        .collect();
+    // Per list non-terminal: its container/output type `S` and element type `E`,
+    // both `A`-prefixed. A list reduction dispatches through the same `Action` as
+    // every node, but `Action::build`'s `N` can't be inferred from the argument
+    // when `A` already carries an unrelated explicit `Action<..>` bound (Rust
+    // fixes `N` to that bound). So the call is fully qualified:
+    // `<A as Action<SeqNode<S, E>>>::build(..)`.
+    let mut list_nt_se: alloc::collections::BTreeMap<&str, (TokenStream, TokenStream)> =
+        alloc::collections::BTreeMap::new();
+    for info in reductions {
+        if matches!(&info.action, AltAction::VecAppend)
+            && let Some(elem) = info.rhs_symbols.last()
+            && !list_nt_se.contains_key(info.non_terminal.as_str())
+        {
+            let e_ty = symbol_to_field_type(elem, &nt_result_types, &terminal_assoc_types, ctx);
+            let s_ty = match typed_non_terminals
+                .iter()
+                .find(|(n, _)| n == &info.non_terminal)
+            {
+                Some((_, result)) => {
+                    let r = format_ident!("{}", result);
+                    quote! { A::#r }
+                }
+                None => quote! { Vec<#e_ty> },
+            };
+            list_nt_se.insert(info.non_terminal.as_str(), (s_ty, e_ty));
+        }
+    }
 
     let mut arms = Vec::new();
 
@@ -752,8 +931,21 @@ fn generate_reduction_arms(
                 AltAction::OptNone => {
                     quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(None) } }
                 }
+                // Sequence (`*`/`+`) building goes through `FromAstSeq` (and
+                // `Default` for the empty case, which is `FromAstSeq::empty`):
+                // codegen names no container, so the target type is the user's
+                // choice. The default target stays `Vec`, via the blanket impl.
                 AltAction::VecEmpty => {
-                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(Vec::new()) } }
+                    let (s_ty, e_ty) = list_nt_se
+                        .get(info.non_terminal.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| (quote! { Vec<()> }, quote! { () }));
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(
+                        <A as #gazelle_crate_path::Action<SeqNode<#s_ty, #e_ty>>>::build(
+                            actions,
+                            SeqNode::Empty,
+                        )?
+                    ) } }
                 }
                 AltAction::VecSingle => {
                     let is_unit = info
@@ -761,11 +953,29 @@ fn generate_reduction_arms(
                         .first()
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
-                    if is_unit {
-                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(vec![()]) } }
+                    let single_elem = if is_unit {
+                        quote! { () }
                     } else {
-                        quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(vec![v0]) } }
-                    }
+                        quote! { v0 }
+                    };
+                    let (s_ty, e_ty) = list_nt_se
+                        .get(info.non_terminal.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| (quote! { Vec<()> }, quote! { () }));
+                    // `let` the empty first: `build(actions, Append(build(actions,
+                    // ..)?, ..))` would borrow `actions` twice in one call.
+                    quote! { {
+                        let __seq = <A as #gazelle_crate_path::Action<SeqNode<#s_ty, #e_ty>>>::build(
+                            actions,
+                            SeqNode::Empty,
+                        )?;
+                        #value_union { #lhs_field: core::mem::ManuallyDrop::new(
+                            <A as #gazelle_crate_path::Action<SeqNode<#s_ty, #e_ty>>>::build(
+                                actions,
+                                SeqNode::Append(__seq, #single_elem),
+                            )?
+                        ) }
+                    } }
                 }
                 AltAction::VecAppend => {
                     let last_idx = info.rhs_symbols.len() - 1;
@@ -774,12 +984,22 @@ fn generate_reduction_arms(
                         .get(last_idx)
                         .map(|s| s.ty.is_none())
                         .unwrap_or(true);
-                    if is_unit {
-                        quote! { { let mut v0 = v0; v0.push(()); #value_union { #lhs_field: core::mem::ManuallyDrop::new(v0) } } }
+                    let elem = if is_unit {
+                        quote! { () }
                     } else {
                         let elem_var = format_ident!("v{}", last_idx);
-                        quote! { { let mut v0 = v0; v0.push(#elem_var); #value_union { #lhs_field: core::mem::ManuallyDrop::new(v0) } } }
-                    }
+                        quote! { #elem_var }
+                    };
+                    let (s_ty, e_ty) = list_nt_se
+                        .get(info.non_terminal.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| (quote! { Vec<()> }, quote! { () }));
+                    quote! { #value_union { #lhs_field: core::mem::ManuallyDrop::new(
+                        <A as #gazelle_crate_path::Action<SeqNode<#s_ty, #e_ty>>>::build(
+                            actions,
+                            SeqNode::Append(v0, #elem),
+                        )?
+                    ) } }
                 }
             }
         };

@@ -1,24 +1,17 @@
-//! Runtime Grammar CLI
+//! Runtime Grammar CLI — `#[ast_defaults]` port.
 //!
-//! Parses a token stream using a grammar loaded at runtime.
-//! The token stream format itself is parsed by a compiled grammar,
-//! which directly drives the runtime parser - no intermediate storage.
+//! Identical to `examples/runtime_grammar.rs` in the main crate, except the
+//! grammar opts into `#[ast_defaults]`. That lets the `Types` impl drop the
+//! five identity AST types (`Assoc`, `AtPrecedence`, `Value`, `ColonValue`,
+//! `Token`) — they now inherit `type Foo = Foo<Self>;` defaults. Only the
+//! terminals and the three non-terminals that need custom handling remain.
 //!
 //! Usage:
-//!   cargo run --example runtime_grammar <grammar.gzl> < tokens.txt
-//!
-//! Token format (space-separated, semicolon-separated expressions):
-//!   NAME           - terminal with no value
-//!   NAME:value     - terminal with value
-//!   NAME@<5        - terminal with left-assoc precedence 5
-//!   NAME:value@>3  - terminal with value and right-assoc precedence 3
-//!   ;              - expression separator (prints result, resets parser)
-//!
-//! Example with included files:
-//!   $ cat examples/expr_tokens.txt | cargo run --example runtime_grammar examples/expr.gzl
+//!   cargo +nightly run --example runtime_grammar ../examples/expr.gzl < ../examples/expr_tokens.txt
 //!
 //! Or inline:
-//!   $ echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo run --example runtime_grammar examples/expr.gzl
+//!   echo "NUM:1 OP:+@<1 NUM:2 OP:*@<2 NUM:3" | cargo +nightly run --example runtime_grammar ../examples/expr.gzl
+#![feature(associated_type_defaults)]
 
 use gazelle::lexer::Scanner;
 use gazelle::runtime::{Cst, CstParser, Token};
@@ -30,6 +23,7 @@ use std::io::{self, Read};
 // Token stream format - each => token action drives the runtime parser
 // Multiple expressions separated by SEMI, each printed separately
 gazelle! {
+    #[ast_defaults]
     grammar token_format {
         start sentences;
         terminals {
@@ -113,14 +107,9 @@ impl<'a> gazelle::ErrorType for Actions<'a> {
 impl<'a> token_format::Types for Actions<'a> {
     type Ident = String;
     type Num = String;
-    // Identity types — ReduceNode blanket handles these
-    type Assoc = token_format::Assoc<Self>;
-    type AtPrecedence = token_format::AtPrecedence<Self>;
-    type Value = token_format::Value<Self>;
-    type ColonValue = token_format::ColonValue<Self>;
-    // Identity types
-    type Token = token_format::Token<Self>;
-    // Custom types
+    // Assoc, AtPrecedence, Value, ColonValue, Token inherit the AST defaults
+    // (`type Foo = Foo<Self>;`) via #[ast_defaults]; the blanket Action builds
+    // them. Only the custom non-terminals are spelled out below.
     type Tokens = RuntimeParser<'a>;
     type Sentences = gazelle::Ignore;
     type Sentence = ();

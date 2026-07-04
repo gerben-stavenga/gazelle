@@ -380,3 +380,125 @@ fn test_file_include() {
     let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
     assert_eq!(result, 3);
 }
+
+// Custom fold ON `*`: `item* as Items` lets the user pick the container, and a
+// non-Vec/context-bearing fold is a custom `Action<SeqNode<..>>` on the `*` node
+// — same dispatch as every reduction. The default would be `Vec`; here it folds
+// straight into a running sum, with `&mut self` available.
+gazelle! {
+    grammar nums {
+        start prog;
+        terminals {
+            NUM: _,
+            SEMI
+        }
+
+        prog = item* as Items => prog;
+        item = NUM SEMI => item;
+    }
+}
+
+struct Sum(i32); // not Default+Extend — the fold is in the Action below
+
+struct NumsActions {
+    folds: usize, // &mut self context is available in the fold
+}
+
+impl gazelle::ErrorType for NumsActions {
+    type Error = core::convert::Infallible;
+}
+
+impl nums::Types for NumsActions {
+    type Num = i32;
+    type Item = i32;
+    type Items = Sum; // the knob: any container you want
+    type Prog = i32;
+}
+
+// the custom fold on `item*`:
+impl Action<nums::SeqNode<Sum, i32>> for NumsActions {
+    fn build(&mut self, node: nums::SeqNode<Sum, i32>) -> Result<Sum, Self::Error> {
+        self.folds += 1;
+        Ok(match node {
+            nums::SeqNode::Empty => Sum(0),
+            nums::SeqNode::Append(Sum(acc), n) => Sum(acc + n),
+        })
+    }
+}
+
+impl Action<nums::Item<Self>> for NumsActions {
+    fn build(&mut self, node: nums::Item<Self>) -> Result<i32, Self::Error> {
+        let nums::Item::Item(n) = node;
+        Ok(n)
+    }
+}
+
+impl Action<nums::Prog<Self>> for NumsActions {
+    fn build(&mut self, node: nums::Prog<Self>) -> Result<i32, Self::Error> {
+        let nums::Prog::Prog(items) = node;
+        Ok(items.0)
+    }
+}
+
+#[test]
+fn test_named_sequence_custom_fold() {
+    let mut parser = nums::Parser::<NumsActions>::new();
+    let mut actions = NumsActions { folds: 0 };
+    for n in [10, 20, 30] {
+        parser.push(nums::Terminal::Num(n), &mut actions).unwrap();
+        parser.push(nums::Terminal::Semi, &mut actions).unwrap();
+    }
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, 60); // folded straight into a sum on the `*`, never a Vec
+    assert!(actions.folds >= 4); // Empty + 3 Appends, all through &mut self
+}
+
+// Custom fold: spell the repetition as an explicit rule instead of `NUM*`.
+// `sum` becomes a normal node you implement `Action` for — the fold logic is
+// yours (here a running sum, not even a container), with &mut self available.
+gazelle! {
+    grammar fold {
+        start sum;
+        terminals {
+            NUM: _
+        }
+
+        sum = _ => zero
+            | sum NUM => add;
+    }
+}
+
+struct FoldActions {
+    steps: usize, // &mut self context is available in the fold
+}
+
+impl gazelle::ErrorType for FoldActions {
+    type Error = core::convert::Infallible;
+}
+
+impl fold::Types for FoldActions {
+    type Num = i64;
+    type Sum = i64; // the accumulator — anything you want, not a container
+}
+
+impl Action<fold::Sum<Self>> for FoldActions {
+    fn build(&mut self, node: fold::Sum<Self>) -> Result<i64, Self::Error> {
+        self.steps += 1;
+        Ok(match node {
+            fold::Sum::Zero => 0,
+            fold::Sum::Add(acc, n) => acc + n,
+        })
+    }
+}
+
+#[test]
+fn test_custom_fold() {
+    let mut parser = fold::Parser::<FoldActions>::new();
+    let mut actions = FoldActions { steps: 0 };
+    for n in [10, 20, 30] {
+        parser.push(fold::Terminal::Num(n), &mut actions).unwrap();
+    }
+    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    assert_eq!(result, 60);
+    assert!(actions.steps >= 4); // zero + 3 adds, all through &mut self
+}

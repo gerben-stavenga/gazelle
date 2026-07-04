@@ -2238,6 +2238,25 @@ pub enum Repetition<A: Types> {
     Opt(A::Atom),
     Atom(A::Atom),
 }
+#[doc(hidden)]
+pub enum SeqNode<S, E> {
+    Empty,
+    Append(S, E),
+}
+impl<S, E> gazelle::AstNode for SeqNode<S, E> {
+    type Output = S;
+}
+impl<E> gazelle::FromAstNode<SeqNode<Vec<E>, E>> for Vec<E> {
+    fn from(node: SeqNode<Vec<E>, E>) -> Vec<E> {
+        match node {
+            SeqNode::Empty => Vec::new(),
+            SeqNode::Append(mut acc, elem) => {
+                acc.push(elem);
+                acc
+            }
+        }
+    }
+}
 /// Associated types for parser symbols.
 pub trait Types: gazelle::ErrorType + Sized {
     type Char;
@@ -2517,12 +2536,12 @@ impl<
                         self.value_stack.pop().unwrap().____concat_sep_pipe,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v2);
-                    __Value {
-                        ____concat_sep_pipe: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____concat_sep_pipe: core::mem::ManuallyDrop::new(
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::Concat>, A::Concat>,
+                        >>::build(actions, SeqNode::Append(v0, v2))?,
+                    ),
                 }
             }
             1usize => {
@@ -2531,8 +2550,17 @@ impl<
                         self.value_stack.pop().unwrap().__concat,
                     )
                 };
-                __Value {
-                    ____concat_sep_pipe: core::mem::ManuallyDrop::new(vec![v0]),
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::Concat>, A::Concat>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____concat_sep_pipe: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::Concat>, A::Concat>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
+                        ),
+                    }
                 }
             }
             2usize => {
@@ -2558,12 +2586,12 @@ impl<
                         self.value_stack.pop().unwrap().____repetition_plus,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____repetition_plus: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____repetition_plus: core::mem::ManuallyDrop::new(
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::Repetition>, A::Repetition>,
+                        >>::build(actions, SeqNode::Append(v0, v1))?,
+                    ),
                 }
             }
             4usize => {
@@ -2572,8 +2600,17 @@ impl<
                         self.value_stack.pop().unwrap().__repetition,
                     )
                 };
-                __Value {
-                    ____repetition_plus: core::mem::ManuallyDrop::new(vec![v0]),
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::Repetition>, A::Repetition>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____repetition_plus: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::Repetition>, A::Repetition>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
+                        ),
+                    }
                 }
             }
             5usize => {
@@ -2743,12 +2780,12 @@ impl<
                         self.value_stack.pop().unwrap().____class_item_plus,
                     )
                 };
-                {
-                    let mut v0 = v0;
-                    v0.push(v1);
-                    __Value {
-                        ____class_item_plus: core::mem::ManuallyDrop::new(v0),
-                    }
+                __Value {
+                    ____class_item_plus: core::mem::ManuallyDrop::new(
+                        <A as gazelle::Action<
+                            SeqNode<Vec<A::ClassItem>, A::ClassItem>,
+                        >>::build(actions, SeqNode::Append(v0, v1))?,
+                    ),
                 }
             }
             21usize => {
@@ -2757,8 +2794,17 @@ impl<
                         self.value_stack.pop().unwrap().__class_item,
                     )
                 };
-                __Value {
-                    ____class_item_plus: core::mem::ManuallyDrop::new(vec![v0]),
+                {
+                    let __seq = <A as gazelle::Action<
+                        SeqNode<Vec<A::ClassItem>, A::ClassItem>,
+                    >>::build(actions, SeqNode::Empty)?;
+                    __Value {
+                        ____class_item_plus: core::mem::ManuallyDrop::new(
+                            <A as gazelle::Action<
+                                SeqNode<Vec<A::ClassItem>, A::ClassItem>,
+                            >>::build(actions, SeqNode::Append(__seq, v0))?,
+                        ),
+                    }
                 }
             }
             22usize => {

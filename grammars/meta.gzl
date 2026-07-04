@@ -7,6 +7,7 @@ terminals {
     KW_START,
     KW_TERMINALS,
     KW_EXPECT,
+    KW_AS,
 
     UNDERSCORE,
     LBRACE,
@@ -47,8 +48,11 @@ alt = term+ variant => alt;
 variant = FAT_ARROW IDENT => variant;
 
 term = LPAREN IDENT PERCENT IDENT RPAREN => sym_sep
+     | LPAREN IDENT PERCENT IDENT RPAREN KW_AS IDENT => sym_sep_as
      | IDENT QUESTION => sym_opt
      | IDENT STAR => sym_star
+     | IDENT STAR KW_AS IDENT => sym_star_as
      | IDENT PLUS => sym_plus
+     | IDENT PLUS KW_AS IDENT => sym_plus_as
      | IDENT => sym_plain
      | UNDERSCORE => sym_empty;
