@@ -6,9 +6,13 @@
 use alloc::string::{String, ToString};
 use alloc::{format, vec, vec::Vec};
 
-use super::{DfaLrInfo, GrammarInternal, LrNfaInfo};
+use super::{DfaLrInfo, GrammarInternal, Item, LrNfaInfo};
 use crate::automaton::Dfa;
 use crate::grammar::SymbolId;
+
+/// Memo key for a conflict example: (prefix, terminal, reduce rule, second reduce rule).
+/// Conflicts sharing this tuple produce the same example.
+type ExampleKey = (Vec<u32>, u32, usize, Option<usize>);
 
 // ============================================================================
 // Conflict detection
@@ -344,8 +348,8 @@ impl TrackedConfig {
 // Counterexample search
 // ============================================================================
 
-/// BFS budget: maximum number of entries explored before giving up.
-const BFS_BUDGET: usize = 10_000;
+/// BFS budget: maximum number of config pairs generated before giving up.
+const BFS_BUDGET: usize = 1_000;
 
 /// Result of counterexample search for a single conflict.
 enum Counterexample {
@@ -462,14 +466,7 @@ fn find_joint_suffix(
     visited.insert((tc_a.config.clone(), tc_b.config.clone()));
     queue.push_back((tc_a.clone(), tc_b.clone()));
 
-    let mut explored = 0usize;
-
     while let Some((cur_a, cur_b)) = queue.pop_front() {
-        explored += 1;
-        if explored > BFS_BUDGET {
-            break;
-        }
-
         let cands_a = candidate_symbols(sim, cur_a.config.state);
         let cands_b_set: BTreeSet<u32> = candidate_symbols(sim, cur_b.config.state)
             .into_iter()
@@ -523,6 +520,9 @@ fn find_joint_suffix(
 
             for sa in &shifted_as {
                 for sb in &shifted_bs {
+                    if visited.len() >= BFS_BUDGET {
+                        return None;
+                    }
                     if !visited.insert((sa.config.clone(), sb.config.clone())) {
                         continue;
                     }
@@ -535,49 +535,106 @@ fn find_joint_suffix(
     None
 }
 
+/// Spawn depth of each nonterminal wanted in `state`: 0 if wanted by a kernel
+/// item (dot > 0), else one more than the depth of the closest LHS whose
+/// closure spawned it. From any goto target of `state`, completing the item
+/// with the minimal-depth LHS climbs strictly back toward a kernel item.
+fn spawn_depths(sim: &ParserSim, state: usize) -> alloc::collections::BTreeMap<u32, usize> {
+    use alloc::collections::btree_map::Entry;
+    use alloc::collections::{BTreeMap, VecDeque};
+
+    let items: Vec<Item> = sim.lr.nfa_items[state]
+        .iter()
+        .map(|&idx| sim.nfa_info.items[idx])
+        .collect();
+    let wants = |item: Item| -> Option<u32> {
+        sim.grammar.rules[item.rule]
+            .rhs
+            .get(item.dot)
+            .filter(|sym| sym.is_non_terminal())
+            .map(|sym| sym.id().0)
+    };
+
+    let mut depths = BTreeMap::new();
+    let mut queue = VecDeque::new();
+    for nt in items
+        .iter()
+        .filter(|it| it.dot > 0)
+        .filter_map(|&it| wants(it))
+    {
+        if depths.insert(nt, 0usize).is_none() {
+            queue.push_back(nt);
+        }
+    }
+    while let Some(lhs) = queue.pop_front() {
+        let depth = depths[&lhs] + 1;
+        for &item in items.iter().filter(|it| it.dot == 0) {
+            if sim.grammar.rules[item.rule].lhs.id().0 != lhs {
+                continue;
+            }
+            if let Some(nt) = wants(item)
+                && let Entry::Vacant(e) = depths.entry(nt)
+            {
+                e.insert(depth);
+                queue.push_back(nt);
+            }
+        }
+    }
+    depths
+}
+
 /// Find a suffix that drives a config to acceptance by completing productions on the stack.
 ///
-/// For each state, pick the item with the shortest remaining RHS, emit those symbols
-/// (terminals and nonterminals), shift through them, reduce, and repeat.
+/// Each round picks a kernel item of the current state, emits its remaining RHS
+/// symbols (nonterminals shift as single symbols, so nothing is ever derived),
+/// and reduces it. This terminates: reducing a dot >= 2 item strictly shrinks
+/// the stack, and when only dot == 1 items exist the goto lands back over the
+/// same base state, where picking the minimal spawn-depth LHS strictly climbs
+/// toward a kernel item of the base — which then appears with dot >= 2.
 fn find_independent_suffix(sim: &ParserSim, cfg: &ParserConfig) -> Vec<u32> {
     let mut suffix = Vec::new();
     let mut current = cfg.clone();
 
-    'outer: loop {
+    loop {
         if sim.can_accept(current.state) {
             return suffix;
         }
 
-        // Try to reduce: find any transition to a reduce state.
-        for &(_sym, target) in &sim.dfa.transitions[current.state] {
-            if !sim.lr.has_items(target) {
-                if let Some(&rule) = sim.lr.reduce_rules[target].first() {
-                    if let Some(new_cfg) = sim.apply_reduce(&current, rule) {
-                        current = new_cfg;
-                        continue 'outer;
-                    }
-                }
-            }
+        let (rule, dot) = {
+            let items = || {
+                sim.lr.nfa_items[current.state]
+                    .iter()
+                    .map(|&idx| sim.nfa_info.items[idx])
+            };
+            let remaining = |it: Item| sim.grammar.rules[it.rule].rhs.len() - it.dot;
+            let chosen = items()
+                .filter(|it| it.dot >= 2)
+                .min_by_key(|&it| remaining(it))
+                .or_else(|| {
+                    let depths = spawn_depths(sim, *current.stack.last()?);
+                    items().filter(|it| it.dot == 1).min_by_key(|it| {
+                        let lhs = sim.grammar.rules[it.rule].lhs.id().0;
+                        depths.get(&lhs).copied().unwrap_or(usize::MAX)
+                    })
+                })
+                // Only reachable from state 0 (empty stack): all items have dot 0.
+                .or_else(|| items().min_by_key(|&it| remaining(it)))
+                .unwrap();
+            (chosen.rule, chosen.dot)
+        };
+
+        for sym in &sim.grammar.rules[rule].rhs[dot..] {
+            let sym_id = sym.id().0;
+            suffix.push(sym_id);
+            let target = sim.dfa.transitions[current.state]
+                .iter()
+                .find(|&&(s, t)| s == sym_id && sim.lr.has_items(t))
+                .map(|&(_, t)| t)
+                .unwrap();
+            current.stack.push(current.state);
+            current.state = target;
         }
-
-        // Shift: pick incomplete item with shortest remaining RHS.
-        let nfa_items = &sim.lr.nfa_items[current.state];
-        let best = nfa_items
-            .iter()
-            .map(|&idx| &sim.nfa_info.items[idx])
-            .filter(|item| item.dot < sim.grammar.rules[item.rule].rhs.len())
-            .min_by_key(|item| sim.grammar.rules[item.rule].rhs.len() - item.dot)
-            .unwrap();
-
-        let sym_id = sim.grammar.rules[best.rule].rhs[best.dot].id().0;
-        suffix.push(sym_id);
-        let target = sim.dfa.transitions[current.state]
-            .iter()
-            .find(|&&(s, t)| s == sym_id && sim.lr.has_items(t))
-            .map(|&(_, t)| t)
-            .unwrap();
-        current.stack.push(current.state);
-        current.state = target;
+        current = sim.apply_reduce(&current, rule).unwrap();
     }
 }
 
@@ -690,6 +747,11 @@ pub(crate) fn conflict_examples(
 
     let mut results: Vec<crate::table::Conflict> = Vec::new();
 
+    // The raw DFA splits states by lookahead, so many conflicts share the same
+    // (prefix, terminal, rules) — the only inputs the example depends on.
+    let mut memo: alloc::collections::BTreeMap<ExampleKey, Option<String>> =
+        alloc::collections::BTreeMap::new();
+
     for (source, terminal, kind) in &conflicts {
         let prefix = path_to(*source);
         let terminal_id = terminal.0;
@@ -699,40 +761,43 @@ pub(crate) fn conflict_examples(
             ConflictKind::ReduceReduce(r1, r2) => (*r1, Some(*r2)),
         };
 
-        let ce = match find_counterexample(&sim, &prefix, terminal_id, reduce_rule, reduce_rule2) {
-            Some(ce) => ce,
-            None => continue,
-        };
-
-        let example = match &ce {
-            Counterexample::Unifying(conv) => format_convergence(conv, grammar),
-            Counterexample::NonUnifying { suffix_a, suffix_b } => {
-                let join = |syms: &[u32]| -> String {
-                    syms.iter()
-                        .map(|&s| sym_name(s))
-                        .collect::<Vec<_>>()
-                        .join(" ")
-                };
-                let pfx = join(&prefix);
-                if reduce_rule2.is_some() {
-                    format!(
-                        "reduce 1: {} \u{2022} {}\nreduce 2: {} \u{2022} {}",
-                        pfx,
-                        join(suffix_a),
-                        pfx,
-                        join(suffix_b),
-                    )
-                } else {
-                    format!(
-                        "shift:  {} \u{2022} {}\nreduce: {} \u{2022} {}",
-                        pfx,
-                        join(suffix_a),
-                        pfx,
-                        join(suffix_b),
-                    )
-                }
-            }
-        };
+        let example = memo
+            .entry((prefix.clone(), terminal_id, reduce_rule, reduce_rule2))
+            .or_insert_with(|| {
+                let ce =
+                    find_counterexample(&sim, &prefix, terminal_id, reduce_rule, reduce_rule2)?;
+                Some(match &ce {
+                    Counterexample::Unifying(conv) => format_convergence(conv, grammar),
+                    Counterexample::NonUnifying { suffix_a, suffix_b } => {
+                        let join = |syms: &[u32]| -> String {
+                            syms.iter()
+                                .map(|&s| sym_name(s))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        };
+                        let pfx = join(&prefix);
+                        if reduce_rule2.is_some() {
+                            format!(
+                                "reduce 1: {} \u{2022} {}\nreduce 2: {} \u{2022} {}",
+                                pfx,
+                                join(suffix_a),
+                                pfx,
+                                join(suffix_b),
+                            )
+                        } else {
+                            format!(
+                                "shift:  {} \u{2022} {}\nreduce: {} \u{2022} {}",
+                                pfx,
+                                join(suffix_a),
+                                pfx,
+                                join(suffix_b),
+                            )
+                        }
+                    }
+                })
+            })
+            .clone();
+        let Some(example) = example else { continue };
 
         let conflict = match kind {
             ConflictKind::ShiftReduce(rule) => crate::table::Conflict::ShiftReduce {
