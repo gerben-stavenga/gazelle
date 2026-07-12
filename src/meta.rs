@@ -13,6 +13,8 @@
 
 use alloc::string::{String, ToString};
 use alloc::{format, vec::Vec};
+use core::fmt;
+use core::ops::Range;
 
 use crate as gazelle;
 use crate::grammar;
@@ -156,8 +158,66 @@ impl gazelle::Action<Term<Self>> for AstBuilder {
 // Lexer
 // ============================================================================
 
+/// A source-located error produced while parsing textual Gazelle grammar syntax.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrammarDiagnostic {
+    /// Human-readable description and parser context.
+    pub message: String,
+    /// Byte range in the grammar source. Empty at end of input.
+    pub span: Range<usize>,
+    /// One-based source line.
+    pub line: usize,
+    /// One-based source column.
+    pub column: usize,
+    /// Contents of the primary source line.
+    pub line_text: String,
+    /// Width of the primary marker in source characters.
+    pub marker_width: usize,
+}
+
+impl GrammarDiagnostic {
+    fn new(input: &str, span: Range<usize>, message: impl Into<String>) -> Self {
+        let start = span.start.min(input.len());
+        let end = span.end.min(input.len()).max(start);
+        let line_start = input[..start].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = input[start..].find('\n').map_or(input.len(), |i| start + i);
+        let line = input[..line_start].bytes().filter(|&b| b == b'\n').count() + 1;
+        let column = input[line_start..start].chars().count() + 1;
+        let marker_width = input[start..end.min(line_end)].chars().count().max(1);
+        Self {
+            message: message.into(),
+            span: start..end,
+            line,
+            column,
+            line_text: input[line_start..line_end].to_string(),
+            marker_width,
+        }
+    }
+}
+
+impl fmt::Display for GrammarDiagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}: {}\n  |\n{} | {}\n  | {}{}",
+            self.line,
+            self.column,
+            self.message,
+            self.line,
+            self.line_text,
+            " ".repeat(self.column.saturating_sub(1)),
+            "^".repeat(self.marker_width),
+        )
+    }
+}
+
+struct LocatedToken {
+    terminal: Terminal<AstBuilder>,
+    span: Range<usize>,
+}
+
 /// Lex grammar syntax using the composable Scanner API.
-fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
+fn lex_grammar(input: &str) -> Result<Vec<LocatedToken>, GrammarDiagnostic> {
     let mut src = Scanner::new(input);
     let mut tokens = Vec::new();
 
@@ -174,7 +234,7 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
 
         // Identifier or keyword
         if let Some(span) = src.read_ident() {
-            let s = &input[span];
+            let s = &input[span.clone()];
             let tok = match s {
                 "start" => Terminal::KwStart,
                 "terminals" => Terminal::KwTerminals,
@@ -185,19 +245,26 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                 "_" => Terminal::Underscore,
                 _ => Terminal::Ident(s.to_string()),
             };
-            tokens.push(tok);
+            tokens.push(LocatedToken {
+                terminal: tok,
+                span,
+            });
             continue;
         }
 
         // Number
         if let Some(span) = src.read_digits() {
-            let s = &input[span];
-            tokens.push(Terminal::Num(s.to_string()));
+            let s = &input[span.clone()];
+            tokens.push(LocatedToken {
+                terminal: Terminal::Num(s.to_string()),
+                span,
+            });
             continue;
         }
 
         // Single-char operators and punctuation
         if let Some(c) = src.peek() {
+            let token_start = src.offset();
             let tok = match c {
                 '=' => {
                     src.advance();
@@ -214,10 +281,10 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                     loop {
                         match src.peek() {
                             None => {
-                                let (line, col) = src.line_col(start - 1);
-                                return Err(format!(
-                                    "{}:{}: unterminated regex pattern",
-                                    line, col
+                                return Err(GrammarDiagnostic::new(
+                                    input,
+                                    token_start..src.offset(),
+                                    "unterminated regex pattern",
                                 ));
                             }
                             Some('\\') => {
@@ -284,11 +351,17 @@ fn lex_grammar(input: &str) -> Result<Vec<Terminal<AstBuilder>>, String> {
                     Terminal::Rparen
                 }
                 _ => {
-                    let (line, col) = src.line_col(src.offset());
-                    return Err(format!("{}:{}: unexpected character: {:?}", line, col, c));
+                    return Err(GrammarDiagnostic::new(
+                        input,
+                        token_start..token_start + c.len_utf8(),
+                        format!("unexpected character: {:?}", c),
+                    ));
                 }
             };
-            tokens.push(tok);
+            tokens.push(LocatedToken {
+                terminal: tok,
+                span: token_start..src.offset(),
+            });
             continue;
         }
     }
@@ -321,11 +394,39 @@ where
 
 /// Parse a grammar string into a Grammar AST.
 pub fn parse_grammar(input: &str) -> Result<grammar::Grammar, String> {
+    parse_grammar_diagnostic(input).map_err(|diagnostic| diagnostic.to_string())
+}
+
+/// Parse a textual grammar, preserving structured source information on error.
+pub fn parse_grammar_diagnostic(input: &str) -> Result<grammar::Grammar, GrammarDiagnostic> {
     let tokens = lex_grammar(input)?;
     if tokens.is_empty() {
-        return Err("Empty grammar".to_string());
+        return Err(GrammarDiagnostic::new(input, 0..0, "empty grammar"));
     }
-    parse_tokens_typed(tokens)
+
+    let mut parser = Parser::<AstBuilder>::new();
+    let mut actions = AstBuilder;
+    let token_texts_owned: Vec<String> = tokens
+        .iter()
+        .map(|token| input[token.span.clone()].to_string())
+        .collect();
+    let token_texts: Vec<&str> = token_texts_owned.iter().map(String::as_str).collect();
+
+    for token in tokens {
+        if let Err(crate::ParseError::Syntax { terminal }) =
+            parser.push(token.terminal, &mut actions)
+        {
+            let message = parser.format_error(terminal, None, Some(&token_texts));
+            return Err(GrammarDiagnostic::new(input, token.span, message));
+        }
+    }
+
+    parser
+        .finish(&mut actions)
+        .map_err(|(parser, crate::ParseError::Syntax { terminal })| {
+            let message = parser.format_error(terminal, None, Some(&token_texts));
+            GrammarDiagnostic::new(input, input.len()..input.len(), message)
+        })
 }
 
 #[cfg(test)]
@@ -337,8 +438,58 @@ mod tests {
     #[test]
     fn test_lex() {
         let tokens = lex_grammar("start s; terminals { A } s: S = A;").unwrap();
-        assert!(matches!(&tokens[0], Terminal::<AstBuilder>::KwStart));
-        assert!(matches!(&tokens[1], Terminal::<AstBuilder>::Ident(s) if s == "s"));
+        assert!(matches!(
+            &tokens[0].terminal,
+            Terminal::<AstBuilder>::KwStart
+        ));
+        assert!(matches!(&tokens[1].terminal, Terminal::<AstBuilder>::Ident(s) if s == "s"));
+        assert_eq!(tokens[0].span, 0..5);
+    }
+
+    #[test]
+    fn test_located_syntax_diagnostic() {
+        let input = "start expr;\nterminals { NUM }\nexpr = NUM => ;\n";
+        let diagnostic = parse_grammar_diagnostic(input).unwrap_err();
+
+        assert_eq!(diagnostic.line, 3);
+        assert_eq!(diagnostic.column, 15);
+        assert_eq!(diagnostic.span, 44..45);
+        assert_eq!(diagnostic.line_text, "expr = NUM => ;");
+        assert!(diagnostic.message.contains("unexpected ';'"));
+        assert!(diagnostic.to_string().contains("3 | expr = NUM => ;"));
+    }
+
+    #[test]
+    fn test_located_lexer_diagnostic() {
+        let input = "start s;\n@";
+        let diagnostic = parse_grammar_diagnostic(input).unwrap_err();
+
+        assert_eq!(diagnostic.line, 2);
+        assert_eq!(diagnostic.column, 1);
+        assert_eq!(diagnostic.span, 9..10);
+        assert_eq!(diagnostic.line_text, "@");
+        assert_eq!(diagnostic.message, "unexpected character: '@'");
+    }
+
+    #[test]
+    fn test_diagnostic_marker_uses_character_width() {
+        let input = "start s;\n💥";
+        let diagnostic = parse_grammar_diagnostic(input).unwrap_err();
+
+        assert_eq!(diagnostic.span, 9..13);
+        assert_eq!(diagnostic.marker_width, 1);
+        assert!(diagnostic.to_string().ends_with("| ^"));
+    }
+
+    #[test]
+    fn test_located_eof_diagnostic() {
+        let input = "start s;\nterminals { A }\ns = A => a";
+        let diagnostic = parse_grammar_diagnostic(input).unwrap_err();
+
+        assert_eq!(diagnostic.span, input.len()..input.len());
+        assert_eq!(diagnostic.line, 3);
+        assert_eq!(diagnostic.column, 11);
+        assert!(diagnostic.message.contains("unexpected '$'"));
     }
 
     #[test]

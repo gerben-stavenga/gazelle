@@ -116,4 +116,4 @@ pub use lexer::{LexerDfa, OwnedLexerDfa};
 
 // Meta-grammar parser
 #[cfg(not(feature = "bootstrap"))]
-pub use meta::parse_grammar;
+pub use meta::{GrammarDiagnostic, parse_grammar, parse_grammar_diagnostic};
