@@ -43,12 +43,11 @@ Every alternative has `=> name`, which generates an enum variant. Untyped termin
 The `gazelle!` macro generates a `calc` module containing several things. First, a `Types` trait and per-node enums:
 
 ```rust
-trait Types: Sized {
-    type Error: From<ParseError>;
-    type Num: Debug;
-    type AddExpr: Debug;
-    type MulExpr: Debug;
-    type Primary: Debug;
+trait Types: ErrorType + Sized {
+    type Num;
+    type AddExpr;
+    type MulExpr;
+    type Primary;
 }
 
 enum AddExpr<A: Types> {
@@ -120,21 +119,21 @@ One `Action` impl per non-terminal enum.
 
 ### The Lexer
 
-Gazelle provides a `Source` type with composable methods for building lexers. We use its methods to read tokens and map them to our terminal enum:
+Gazelle provides a `Scanner` type with composable methods for building lexers. We use its methods to read tokens and map them to our terminal enum:
 
 ```rust
-use gazelle::lexer::Source;
+use gazelle::lexer::Scanner;
 
 fn tokenize(input: &str) -> Result<Vec<calc::Terminal<Eval>>, String> {
-    let mut src = Source::from_str(input);
+    let mut src = Scanner::new(input);
     let mut tokens = Vec::new();
 
     loop {
         src.skip_whitespace();
         if src.at_end() { break; }
 
-        if let Some(span) = src.read_number() {
-            let s = &input[span.start..span.end];
+        if let Some(span) = src.read_digits() {
+            let s = &input[span];
             tokens.push(calc::Terminal::Num(s.parse().unwrap()));
         } else if let Some(c) = src.peek() {
             src.advance();
@@ -153,7 +152,9 @@ fn tokenize(input: &str) -> Result<Vec<calc::Terminal<Eval>>, String> {
 }
 ```
 
-`Source` provides methods like `read_number()`, `read_ident()`, `skip_whitespace()` that return `Span` values you can use to extract text from the input.
+`Scanner` provides methods like `read_digits()`, `read_ident()`, and
+`skip_whitespace()`. The read methods return byte ranges you can use to extract
+text from the input.
 
 ### Running the Parser
 
@@ -164,9 +165,15 @@ fn run(input: &str) -> Result<i64, String> {
     let mut actions = Eval;
 
     for token in tokens {
-        parser.push(token, &mut actions).map_err(|e| parser.format_error(&e))?;
+        parser = parser.push(token, &mut actions).map_err(|error| {
+            calc::format_error(&error, None, None)
+                .unwrap_or_else(|| "semantic action failed".to_string())
+        })?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    parser.finish(&mut actions).map_err(|error| {
+        calc::format_error(&error, None, None)
+            .unwrap_or_else(|| "semantic action failed".to_string())
+    })
 }
 
 fn main() {
@@ -249,9 +256,15 @@ fn run(input: &str) -> Result<(), String> {
     let mut actions = Eval;
 
     for token in tokens {
-        parser.push(token, &mut actions).map_err(|e| parser.format_error(&e))?;
+        parser = parser.push(token, &mut actions).map_err(|error| {
+            calc::format_error(&error, None, None)
+                .unwrap_or_else(|| "semantic action failed".to_string())
+        })?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))
+    parser.finish(&mut actions).map_err(|error| {
+        calc::format_error(&error, None, None)
+            .unwrap_or_else(|| "semantic action failed".to_string())
+    })
 }
 ```
 
@@ -559,7 +572,7 @@ let mut actions = Eval::new();
 loop {
     // Lexer sees the current custom_ops table
     match tokenizer.next(&actions.custom_ops)? {
-        Some(tok) => parser.push(tok, &mut actions)?,
+        Some(tok) => parser = parser.push(tok, &mut actions)?,
         None => break,
     }
 }

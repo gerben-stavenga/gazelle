@@ -198,6 +198,26 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             }
         }
 
+        /// Format a syntax error using Gazelle's default English presentation.
+        /// Returns `None` for user action errors.
+        #vis fn format_error<E>(
+            error: &#gazelle_crate_path::ParseError<E, #gazelle_crate_path::RecoveryParser<'static>>,
+            display_names: Option<&[(&str, &str)]>,
+            tokens: Option<&[&str]>,
+        ) -> Option<String> {
+            match error {
+                #gazelle_crate_path::ParseError::Syntax { terminal, recovery } => {
+                    Some(recovery.format_error(
+                        *terminal,
+                        &#table_mod::ERROR_INFO,
+                        display_names,
+                        tokens,
+                    ))
+                }
+                #gazelle_crate_path::ParseError::Action { .. } => None,
+            }
+        }
+
         /// Type-safe LR parser.
         #vis struct #parser_struct<A: #types_trait> {
             parser: #gazelle_crate_path::Parser<'static>,

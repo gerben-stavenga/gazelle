@@ -1775,7 +1775,8 @@ pub enum Cst {
 
 /// A parser that builds a [`Cst`] automatically.
 ///
-/// Mirrors the `push`/`finish` pattern of generated parsers.
+/// Provides a mutable `push`/`finish` API for syntax trees without user
+/// semantic values or action side effects.
 pub struct CstParser<'a> {
     parser: Parser<'a>,
     stack: Vec<Cst>,
