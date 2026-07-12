@@ -1016,6 +1016,9 @@ fn main() {
 // =============================================================================
 
 #[cfg(test)]
+mod recovery_benchmark;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
