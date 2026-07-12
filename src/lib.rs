@@ -103,13 +103,14 @@ pub mod codegen;
 pub use grammar::{Alt, Grammar, Rule, SymbolId, Term, TerminalDef};
 
 // Parse table types
-pub use table::{CompiledTable, Conflict, ErrorInfo};
+pub use table::{CompiledTable, Conflict, CounterexampleLimits, ErrorInfo, TableBuildOptions};
 
 // Runtime parser types
 pub use runtime::{
     Action, AstNode, Cst, CstParser, DiagnosticStackEntry, ErrorContext, ErrorType, FromAstNode,
-    Ignore, ParseError, ParseTable, Parser, Precedence, RecoveryInfo, RecoveryParser, Repair,
-    Resolution, RuleContext, SyntaxDiagnostic, Token,
+    Ignore, ParseError, ParseTable, Parser, Precedence, RecoveryInfo, RecoveryLimits,
+    RecoveryOutcome, RecoveryParser, RecoveryStatus, Repair, Resolution, RuleContext,
+    SyntaxDiagnostic, Token,
 };
 
 // Lexer DFA

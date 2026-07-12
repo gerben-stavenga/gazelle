@@ -279,6 +279,20 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 (recovery, errors)
             }
 
+            /// Consume this semantic parser and search with explicit limits.
+            pub fn recover_with_limits(
+                self,
+                buffer: &[#gazelle_crate_path::Token],
+                limits: #gazelle_crate_path::RecoveryLimits,
+            ) -> (
+                #gazelle_crate_path::RecoveryParser<'static>,
+                #gazelle_crate_path::RecoveryOutcome,
+            ) {
+                let mut recovery = self.into_recovery();
+                let outcome = recovery.recover_with_limits(buffer, limits);
+                (recovery, outcome)
+            }
+
             fn drain_values(&mut self) {
                 for i in (0..self.value_stack.len()).rev() {
                     let union_val = self.value_stack.pop().unwrap();

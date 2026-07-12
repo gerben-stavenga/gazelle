@@ -744,6 +744,28 @@ let later_errors = recovery.recover(&later_tokens);
 can continue tracking LR state and finding later syntax errors, but it cannot
 pretend to reconstruct values or undo user action side effects.
 
+For untrusted or interactive input, bound the Dijkstra search explicitly:
+
+```rust
+use gazelle::{RecoveryLimits, RecoveryStatus};
+
+let outcome = recovery.recover_with_limits(
+    &remaining_tokens,
+    RecoveryLimits {
+        max_states: 10_000,
+        max_cost: 4,
+    },
+);
+
+match outcome.status {
+    RecoveryStatus::Recovered => use_repairs(outcome.errors),
+    RecoveryStatus::NoSolution => report_unrecoverable(),
+    RecoveryStatus::LimitReached => report_incomplete_recovery(),
+}
+```
+
+`recover` remains the convenience API and uses `RecoveryLimits::default()`.
+
 ### Structured diagnostics
 
 Diagnostics are exposed as grammar data before they are formatted. Every
@@ -815,6 +837,22 @@ Each `RecoveryInfo` contains a position (token index where the error was detecte
 Recovery can find multiple errors in one pass — it repairs and continues until the end of input.
 
 ### Conflict diagnostics
+
+Counterexample search has an independent build-time limit. It affects only
+diagnostic witness quality, never the parse table:
+
+```rust
+use gazelle::{CompiledTable, CounterexampleLimits, TableBuildOptions};
+
+let table = CompiledTable::build_with_options(
+    &grammar,
+    TableBuildOptions {
+        counterexamples: CounterexampleLimits {
+            max_config_pairs: 20_000,
+        },
+    },
+)?;
+```
 
 During table generation, Gazelle reports shift/reduce and reduce/reduce conflicts with concrete examples showing both parses:
 

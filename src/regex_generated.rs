@@ -2395,6 +2395,16 @@ impl<A: Types> Parser<A> {
         let errors = recovery.recover(buffer);
         (recovery, errors)
     }
+    /// Consume this semantic parser and search with explicit limits.
+    pub fn recover_with_limits(
+        self,
+        buffer: &[gazelle::Token],
+        limits: gazelle::RecoveryLimits,
+    ) -> (gazelle::RecoveryParser<'static>, gazelle::RecoveryOutcome) {
+        let mut recovery = self.into_recovery();
+        let outcome = recovery.recover_with_limits(buffer, limits);
+        (recovery, outcome)
+    }
     fn drain_values(&mut self) {
         for i in (0..self.value_stack.len()).rev() {
             let union_val = self.value_stack.pop().unwrap();

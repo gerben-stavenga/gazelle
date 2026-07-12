@@ -1298,6 +1298,23 @@ impl<'a> Parser<'a> {
     /// budget. On success the parser state is advanced past the repaired
     /// region and parsing can continue.
     pub fn recover(&mut self, buffer: &[Token]) -> Vec<RecoveryInfo> {
+        self.recover_with_limits(buffer, RecoveryLimits::default())
+            .errors
+    }
+
+    /// Recover with explicit bounds on the Dijkstra search space.
+    pub fn recover_with_limits(
+        &mut self,
+        buffer: &[Token],
+        limits: RecoveryLimits,
+    ) -> RecoveryOutcome {
+        if limits.max_states == 0 {
+            return RecoveryOutcome {
+                errors: Vec::new(),
+                status: RecoveryStatus::LimitReached,
+            };
+        }
+
         // Fast-forward past leading tokens that shift cleanly
         let mut start = 0;
         while start < buffer.len() {
@@ -1322,9 +1339,11 @@ impl<'a> Parser<'a> {
 
         states.push((SimState::from_parser(self), start, None));
         pq.push(Reverse((0, 0, buf_len - start, 0)));
+        let mut limit_reached = false;
 
         while let Some(Reverse((cost, deletions, _, state_idx))) = pq.pop() {
-            if states.len() > 5000 {
+            if cost > limits.max_cost {
+                limit_reached = true;
                 break;
             }
 
@@ -1347,7 +1366,10 @@ impl<'a> Parser<'a> {
                 if candidate.try_accept() {
                     let edits = Self::reconstruct_edits(&states, state_idx);
                     candidate.write_back(self, buf_len - start);
-                    return Self::edits_to_errors(&edits, start);
+                    return RecoveryOutcome {
+                        errors: Self::edits_to_errors(&edits, start),
+                        status: RecoveryStatus::Recovered,
+                    };
                 }
             }
 
@@ -1355,9 +1377,13 @@ impl<'a> Parser<'a> {
             if pos < buf_len
                 && let Some(sim2) = sim.try_shift(buffer[pos])
             {
-                let idx = states.len();
-                states.push((sim2, pos + 1, Some((state_idx, Repair::Shift))));
-                pq.push(Reverse((cost, deletions, remaining - 1, idx)));
+                if states.len() < limits.max_states {
+                    let idx = states.len();
+                    states.push((sim2, pos + 1, Some((state_idx, Repair::Shift))));
+                    pq.push(Reverse((cost, deletions, remaining - 1, idx)));
+                } else {
+                    limit_reached = true;
+                }
             }
 
             // Insert any terminal (cost +1)
@@ -1365,26 +1391,41 @@ impl<'a> Parser<'a> {
             for t in 1..num_terms {
                 let token = Token::new(SymbolId(t));
                 if let Some(sim2) = sim.try_shift(token) {
-                    let idx = states.len();
-                    states.push((sim2, pos, Some((state_idx, Repair::Insert(SymbolId(t))))));
-                    pq.push(Reverse((cost + 1, deletions, remaining, idx)));
+                    if cost < limits.max_cost && states.len() < limits.max_states {
+                        let idx = states.len();
+                        states.push((sim2, pos, Some((state_idx, Repair::Insert(SymbolId(t))))));
+                        pq.push(Reverse((cost + 1, deletions, remaining, idx)));
+                    } else {
+                        limit_reached = true;
+                    }
                 }
             }
 
             // Delete current token (cost +1)
             if pos < buf_len {
-                let idx = states.len();
-                states.push((
-                    sim,
-                    pos + 1,
-                    Some((state_idx, Repair::Delete(buffer[pos].terminal))),
-                ));
-                pq.push(Reverse((cost + 1, deletions + 1, remaining - 1, idx)));
+                if cost < limits.max_cost && states.len() < limits.max_states {
+                    let idx = states.len();
+                    states.push((
+                        sim,
+                        pos + 1,
+                        Some((state_idx, Repair::Delete(buffer[pos].terminal))),
+                    ));
+                    pq.push(Reverse((cost + 1, deletions + 1, remaining - 1, idx)));
+                } else {
+                    limit_reached = true;
+                }
             }
         }
 
         // Search exhausted without finding acceptance
-        vec![]
+        RecoveryOutcome {
+            errors: Vec::new(),
+            status: if limit_reached {
+                RecoveryStatus::LimitReached
+            } else {
+                RecoveryStatus::NoSolution
+            },
+        }
     }
 
     /// Reconstruct the edit sequence by following parent pointers.
@@ -1462,6 +1503,15 @@ impl<'a> RecoveryParser<'a> {
     /// Search the remaining token buffer for minimum-cost repairs.
     pub fn recover(&mut self, buffer: &[Token]) -> Vec<RecoveryInfo> {
         self.parser.recover(buffer)
+    }
+
+    /// Search for repairs with explicit state and edit-cost limits.
+    pub fn recover_with_limits(
+        &mut self,
+        buffer: &[Token],
+        limits: RecoveryLimits,
+    ) -> RecoveryOutcome {
+        self.parser.recover_with_limits(buffer, limits)
     }
 
     /// Format a syntax error using the current recovered parser state.
@@ -1726,6 +1776,44 @@ impl<'a> SimState<'a> {
             self.token_idx = start_token;
         }
     }
+}
+
+/// Bounds for syntax-recovery search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveryLimits {
+    /// Maximum number of simulated parser configurations retained.
+    pub max_states: usize,
+    /// Maximum insert/delete cost explored. Shifts have zero cost.
+    pub max_cost: usize,
+}
+
+impl Default for RecoveryLimits {
+    fn default() -> Self {
+        Self {
+            max_states: 5_000,
+            max_cost: usize::MAX,
+        }
+    }
+}
+
+/// Why a bounded recovery search stopped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryStatus {
+    /// A repair leading to acceptance was found and applied.
+    Recovered,
+    /// The complete bounded search space contained no repair.
+    NoSolution,
+    /// A state or repair-cost limit prevented a complete search.
+    LimitReached,
+}
+
+/// Result of syntax recovery with explicit limits.
+#[derive(Debug, Clone)]
+pub struct RecoveryOutcome {
+    /// Repairs grouped by syntax-error position.
+    pub errors: Vec<RecoveryInfo>,
+    /// Whether recovery succeeded, failed completely, or hit a limit.
+    pub status: RecoveryStatus,
 }
 
 /// Information about one error recovery point.

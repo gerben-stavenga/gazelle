@@ -73,6 +73,14 @@ fn generated_recovery_consumes_semantic_parser() {
 
     let unexpected = gazelle::Token::new(simple::Terminal::<SimpleActionsImpl>::A.symbol_id());
     let mut recovery = error.into_recovery();
+    let bounded = recovery.recover_with_limits(
+        &[unexpected],
+        gazelle::RecoveryLimits {
+            max_states: 0,
+            max_cost: 0,
+        },
+    );
+    assert_eq!(bounded.status, gazelle::RecoveryStatus::LimitReached);
     let errors = recovery.recover(&[unexpected]);
     assert!(!errors.is_empty());
     assert!(recovery.recover(&[]).is_empty());

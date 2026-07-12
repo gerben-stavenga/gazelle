@@ -1,7 +1,7 @@
 //! Tests for automatic error recovery.
 
 use gazelle::parse_grammar;
-use gazelle::runtime::{Parser, Repair, Token};
+use gazelle::runtime::{Parser, RecoveryLimits, RecoveryStatus, Repair, Token};
 use gazelle::table::CompiledTable;
 
 /// Push tokens until error, then recover with remaining buffer.
@@ -218,4 +218,29 @@ fn recover_at_eof() {
             .any(|r| matches!(r, Repair::Insert(id) if *id == semi_id))
     });
     assert!(has_insert, "expected insert SEMI at EOF, got: {:?}", errors);
+}
+
+#[test]
+fn recovery_reports_configured_limit_exhaustion() {
+    let grammar = parse_grammar(STMT_GRAMMAR).unwrap();
+    let compiled = CompiledTable::build(&grammar).unwrap();
+    let mut parser = Parser::new(compiled.table());
+    let id = Token::new(compiled.symbol_id("ID").unwrap());
+
+    while let Ok(Some(_)) = parser.maybe_reduce(Some(id)) {}
+    parser.shift(id);
+
+    let outcome = parser.recover_with_limits(
+        &[],
+        RecoveryLimits {
+            max_states: 64,
+            max_cost: 0,
+        },
+    );
+    assert_eq!(outcome.status, RecoveryStatus::LimitReached);
+    assert!(outcome.errors.is_empty());
+
+    let outcome = parser.recover_with_limits(&[], RecoveryLimits::default());
+    assert_eq!(outcome.status, RecoveryStatus::Recovered);
+    assert!(!outcome.errors.is_empty());
 }
