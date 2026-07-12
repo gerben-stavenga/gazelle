@@ -1,6 +1,29 @@
 use crate::grammar::SymbolId;
 use crate::runtime::ErrorContext;
 
+/// Bounds for the search that turns an LR conflict into a concrete example.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CounterexampleLimits {
+    /// Maximum paired parser configurations explored for one conflict.
+    pub max_config_pairs: usize,
+}
+
+impl Default for CounterexampleLimits {
+    fn default() -> Self {
+        Self {
+            max_config_pairs: 1_000,
+        }
+    }
+}
+
+/// Options controlling parse-table construction diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TableBuildOptions {
+    /// Search bounds for conflict counterexamples. Table semantics are
+    /// unaffected; only the quality and cost of conflict examples changes.
+    pub counterexamples: CounterexampleLimits,
+}
+
 /// Grammar metadata for error reporting.
 /// Only carries data not available through [`ParseTable`].
 #[doc(hidden)]
@@ -42,6 +65,7 @@ impl ErrorContext for ErrorInfo<'_> {
 // ============================================================================
 
 mod alloc_impl {
+    use super::TableBuildOptions;
     use alloc::collections::{BTreeMap, BTreeSet};
     use alloc::{format, string::String, vec, vec::Vec};
 
@@ -197,13 +221,29 @@ mod alloc_impl {
         ///
         /// Returns an error if grammar conversion fails (for example, unknown symbols).
         pub fn build(grammar: &Grammar) -> Result<Self, String> {
+            Self::build_with_options(grammar, TableBuildOptions::default())
+        }
+
+        /// Build parse tables with explicit diagnostic search options.
+        pub fn build_with_options(
+            grammar: &Grammar,
+            options: TableBuildOptions,
+        ) -> Result<Self, String> {
             let internal = to_grammar_internal(grammar)?;
-            Ok(Self::build_from_internal(&internal))
+            Ok(Self::build_from_internal_with_options(&internal, options))
         }
 
         /// Build parse tables from internal grammar representation using NFA → DFA → Hopcroft.
         pub(crate) fn build_from_internal(grammar: &GrammarInternal) -> Self {
-            let result = crate::lr::build_minimal_automaton(grammar);
+            Self::build_from_internal_with_options(grammar, TableBuildOptions::default())
+        }
+
+        pub(crate) fn build_from_internal_with_options(
+            grammar: &GrammarInternal,
+            options: TableBuildOptions,
+        ) -> Self {
+            let result =
+                crate::lr::build_minimal_automaton_with_limits(grammar, options.counterexamples);
             let num_terminals = grammar.symbols.num_terminals();
             let num_item_states = result.num_item_states;
             let num_non_terminals = grammar.symbols.num_non_terminals() as usize;
@@ -772,6 +812,35 @@ mod tests {
             "Should contain ambiguity info: {}",
             msg,
         );
+    }
+
+    #[test]
+    fn counterexample_search_respects_configured_space() {
+        let grammar = parse_grammar(
+            r#"
+                start expr;
+                terminals { PLUS, NUM }
+                expr = expr PLUS expr => add | NUM => num;
+            "#,
+        )
+        .unwrap();
+
+        let default = CompiledTable::build(&grammar).unwrap();
+        assert!(default.format_conflicts()[0].contains("Ambiguity in"));
+
+        let bounded = CompiledTable::build_with_options(
+            &grammar,
+            super::TableBuildOptions {
+                counterexamples: super::CounterexampleLimits {
+                    max_config_pairs: 0,
+                },
+            },
+        )
+        .unwrap();
+        let message = &bounded.format_conflicts()[0];
+        assert!(!message.contains("Ambiguity in"));
+        assert!(message.contains("shift:"));
+        assert!(message.contains("reduce:"));
     }
 
     #[test]

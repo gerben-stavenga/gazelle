@@ -143,6 +143,8 @@ parser = match parser.push(token, &mut actions) {
 
 The structured diagnosis is the primary interface. Applications can translate
 it, serialize it, or adapt it to an IDE; `format_error` is only a convenience.
+Recovery also provides `recover_with_limits`, with configurable state and edit
+cost bounds and an explicit `LimitReached` result for adversarial input.
 
 This gives you:
 - Full IDE support in action code (autocomplete, type hints, go-to-definition)

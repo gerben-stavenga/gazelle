@@ -9,6 +9,7 @@ use alloc::{format, vec, vec::Vec};
 use super::{DfaLrInfo, GrammarInternal, Item, LrNfaInfo};
 use crate::automaton::Dfa;
 use crate::grammar::SymbolId;
+use crate::table::CounterexampleLimits;
 
 /// Memo key for a conflict example: (prefix, terminal, reduce rule, second reduce rule).
 /// Conflicts sharing this tuple produce the same example.
@@ -364,9 +365,6 @@ impl TrackedConfig {
 // Counterexample search
 // ============================================================================
 
-/// BFS budget: maximum number of config pairs generated before giving up.
-const BFS_BUDGET: usize = 1_000;
-
 /// Result of counterexample search for a single conflict.
 enum Counterexample {
     /// Both parses converge: ambiguous nonterminal with two CST subtrees.
@@ -469,11 +467,15 @@ fn find_joint_suffix(
     sim: &ParserSim,
     tc_a: &TrackedConfig,
     tc_b: &TrackedConfig,
+    limits: CounterexampleLimits,
 ) -> Option<Convergence> {
     use alloc::collections::{BTreeSet, VecDeque};
 
     if tc_a.config == tc_b.config {
         return find_convergence(tc_a, tc_b, sim);
+    }
+    if limits.max_config_pairs == 0 {
+        return None;
     }
 
     let mut queue = VecDeque::new();
@@ -536,7 +538,7 @@ fn find_joint_suffix(
 
             for sa in &shifted_as {
                 for sb in &shifted_bs {
-                    if visited.len() >= BFS_BUDGET {
+                    if visited.len() >= limits.max_config_pairs {
                         return None;
                     }
                     if !visited.insert((sa.config.clone(), sb.config.clone())) {
@@ -667,6 +669,7 @@ fn find_counterexample(
     terminal: u32,
     reduce_rule: usize,
     reduce_rule2: Option<usize>,
+    limits: CounterexampleLimits,
 ) -> Option<Counterexample> {
     let base = replay_prefix_tracked(sim, prefix)?;
 
@@ -689,7 +692,7 @@ fn find_counterexample(
         (tc_shift, tc_reduce_parse)
     };
 
-    if let Some(conv) = find_joint_suffix(sim, &tc_a, &tc_b) {
+    if let Some(conv) = find_joint_suffix(sim, &tc_a, &tc_b, limits) {
         return Some(Counterexample::Unifying(conv));
     }
 
@@ -719,6 +722,7 @@ pub(crate) fn conflict_examples(
     nfa_info: &LrNfaInfo,
     grammar: &GrammarInternal,
     conflicts: Vec<(usize, SymbolId, ConflictKind)>,
+    limits: CounterexampleLimits,
 ) -> Vec<crate::table::Conflict> {
     // BFS from state 0 to find shortest path (grammar symbols) to each state.
     let mut parent: Vec<Option<(usize, u32)>> = vec![None; dfa.num_states()];
@@ -780,8 +784,14 @@ pub(crate) fn conflict_examples(
         let example = memo
             .entry((prefix.clone(), terminal_id, reduce_rule, reduce_rule2))
             .or_insert_with(|| {
-                let ce =
-                    find_counterexample(&sim, &prefix, terminal_id, reduce_rule, reduce_rule2)?;
+                let ce = find_counterexample(
+                    &sim,
+                    &prefix,
+                    terminal_id,
+                    reduce_rule,
+                    reduce_rule2,
+                    limits,
+                )?;
                 Some(match &ce {
                     Counterexample::Unifying(conv) => format_convergence(conv, grammar),
                     Counterexample::NonUnifying { suffix_a, suffix_b } => {

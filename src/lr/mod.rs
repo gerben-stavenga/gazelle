@@ -6,6 +6,7 @@ use alloc::string::{String, ToString};
 use alloc::{format, vec, vec::Vec};
 
 use crate::grammar::SymbolId;
+use crate::table::CounterexampleLimits;
 
 /// Convert snake_case or SCREAMING_SNAKE name to CamelCase type name.
 /// e.g., "grammar_def" → "GrammarDef", "NAME" → "Name", "COMP_OP" → "CompOp"
@@ -914,7 +915,10 @@ fn merge_lookaheads(dfa: &mut Dfa, states: &[DfaStateKind]) {
 }
 
 /// Build a minimal LR(1) automaton for a grammar using NFA → DFA → Hopcroft.
-pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonResult {
+pub(crate) fn build_minimal_automaton_with_limits(
+    grammar: &GrammarInternal,
+    counterexample_limits: CounterexampleLimits,
+) -> AutomatonResult {
     let first_sets = FirstSets::compute(grammar);
     let (nfa, nfa_info) = build_lr_nfa(grammar, &first_sets);
     let num_items = nfa_info.items.len();
@@ -922,7 +926,14 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
     let (mut raw_dfa, raw_nfa_sets) = automaton::subset_construction(&nfa);
     let dfa_lr_info = classify_dfa_states(&raw_nfa_sets, num_items);
     let dfa_conflicts = detect_conflicts(&raw_dfa, &dfa_lr_info, &nfa_info, grammar);
-    let conflicts = conflict_examples(&raw_dfa, &dfa_lr_info, &nfa_info, grammar, dfa_conflicts);
+    let conflicts = conflict_examples(
+        &raw_dfa,
+        &dfa_lr_info,
+        &nfa_info,
+        grammar,
+        dfa_conflicts,
+        counterexample_limits,
+    );
     let resolved = resolve_conflicts(dfa_lr_info, &nfa_info);
     merge_lookaheads(&mut raw_dfa, &resolved);
 
@@ -1322,7 +1333,8 @@ mod tests {
             }
             let internal = to_grammar_internal(&bare).unwrap();
             let gazelle_canonical = distinct_canonical_item_sets(&internal);
-            let automaton = build_minimal_automaton(&internal);
+            let automaton =
+                build_minimal_automaton_with_limits(&internal, CounterexampleLimits::default());
             let gazelle_final = automaton.num_item_states;
             let gazelle_sr = automaton
                 .conflicts
