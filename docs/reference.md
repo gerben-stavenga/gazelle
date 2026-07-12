@@ -123,6 +123,22 @@ impl my_grammar::Types for MyActions {
 
 Gazelle grammars can be written in `.gzl` files or inline with the `gazelle!` macro.
 
+Textual grammars parsed with `parse_grammar` report the first syntax error with
+its line, column, source line, and parser context. Applications that need
+structured source information can use `parse_grammar_diagnostic` instead:
+
+```rust
+let source = "start expr;\nterminals { NUM }\nexpr = NUM => ;";
+let error = gazelle::parse_grammar_diagnostic(source).unwrap_err();
+assert_eq!((error.line, error.column), (3, 15));
+assert_eq!(error.line_text, "expr = NUM => ;");
+```
+
+`GrammarDiagnostic::span` is a byte range in the original grammar source;
+`marker_width` is measured in source characters for rendering Unicode safely.
+The existing `parse_grammar` API remains a convenience wrapper returning the
+same diagnostic rendered as a string.
+
 ### Basic Structure
 
 `.gzl` files contain the grammar directly:

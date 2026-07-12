@@ -69,62 +69,14 @@ impl gazelle::Action<expr::Expr<Self>> for Eval {
         Ok(match node {
             expr::Expr::Term(t) => t,
             expr::Expr::Binop(l, op, r) => match op {
-                '|' => {
-                    if l != 0 || r != 0 {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                '&' => {
-                    if l != 0 && r != 0 {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                '=' => {
-                    if l == r {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                '!' => {
-                    if l != r {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                '<' => {
-                    if l < r {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                '>' => {
-                    if l > r {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                'L' => {
-                    if l <= r {
-                        1
-                    } else {
-                        0
-                    }
-                }
-                'G' => {
-                    if l >= r {
-                        1
-                    } else {
-                        0
-                    }
-                }
+                '|' => (l != 0 || r != 0) as i64,
+                '&' => (l != 0 && r != 0) as i64,
+                '=' => (l == r) as i64,
+                '!' => (l != r) as i64,
+                '<' => (l < r) as i64,
+                '>' => (l > r) as i64,
+                'L' => (l <= r) as i64,
+                'G' => (l >= r) as i64,
                 '+' => l + r,
                 '-' => l - r,
                 '*' => l * r,
