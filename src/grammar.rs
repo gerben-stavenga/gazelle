@@ -16,6 +16,11 @@ impl SymbolId {
     pub const fn new(id: u32) -> Self {
         SymbolId(id)
     }
+
+    /// Return the dense index used by generated grammar metadata.
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
 }
 
 // ============================================================================

@@ -596,20 +596,20 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
 
     let mut parser = Parser::<NfaBuilder>::new();
     for tok in tokens {
-        parser.push(tok, &mut builder).map_err(|e| match e {
-            crate::ParseError::Syntax { terminal } => RegexError {
+        parser = parser.push(tok, &mut builder).map_err(|e| match e {
+            crate::ParseError::Syntax { terminal, .. } => RegexError {
                 message: format!("unexpected terminal {:?}", terminal),
                 offset: 0,
             },
-            crate::ParseError::Action(e) => e,
+            crate::ParseError::Action { error, .. } => error,
         })?;
     }
-    let frag = parser.finish(&mut builder).map_err(|(_, e)| match e {
-        crate::ParseError::Syntax { terminal } => RegexError {
+    let frag = parser.finish(&mut builder).map_err(|e| match e {
+        crate::ParseError::Syntax { terminal, .. } => RegexError {
             message: format!("unexpected terminal {:?}", terminal),
             offset: 0,
         },
-        crate::ParseError::Action(e) => e,
+        crate::ParseError::Action { error, .. } => error,
     })?;
 
     builder.nfa.add_epsilon(0, frag.start);

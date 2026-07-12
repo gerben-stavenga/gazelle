@@ -390,14 +390,21 @@ pub struct Parser<A: Types> { /* ... */ }
 
 impl<A: Types + Action<Expr<A>>> Parser<A> {
     pub fn new() -> Self;
-    pub fn push(&mut self, terminal: Terminal<A>, actions: &mut A) -> Result<(), A::Error>;
-    pub fn finish(self, actions: &mut A) -> Result<A::Expr, (Self, A::Error)>;
+    pub fn push(self, terminal: Terminal<A>, actions: &mut A) -> Result<Self, ParseError<A::Error, RecoveryParser<'static>>>;
+    pub fn finish(self, actions: &mut A) -> Result<A::Expr, ParseError<A::Error, RecoveryParser<'static>>>;
     pub fn state(&self) -> usize;
     pub fn format_error(&self, err: &ParseError) -> String;
+    pub fn into_recovery(self) -> gazelle::RecoveryParser<'static>;
+    pub fn recover(
+        self,
+        buffer: &[gazelle::Token],
+    ) -> (gazelle::RecoveryParser<'static>, Vec<gazelle::RecoveryInfo>);
 }
 ```
 
-Note: `finish` returns `(Self, A::Error)` on error, giving back the parser so you can still call `format_error`.
+Both methods consume the semantic parser. On success, `push` returns it for the
+next token. On failure, `ParseError` owns a syntax-only `RecoveryParser`; the
+semantic parser cannot be used again.
 
 ---
 
@@ -703,6 +710,50 @@ let msg = parser.format_error_with(&e, &display_names, &token_texts);
 ```
 
 ### Error recovery
+
+Generated parsers make the semantic boundary explicit. A syntax error discards
+their semantic value stack, so the error owns a syntax-only `RecoveryParser`:
+
+```rust
+let error = parser.push(terminal, &mut actions).unwrap_err();
+let mut recovery = error.into_recovery();
+let errors = recovery.recover(&remaining_tokens);
+let later_errors = recovery.recover(&later_tokens);
+```
+
+`RecoveryParser` deliberately has no semantic `push` or `finish` methods. It
+can continue tracking LR state and finding later syntax errors, but it cannot
+pretend to reconstruct values or undo user action side effects.
+
+### Structured diagnostics
+
+Diagnostics are exposed as grammar data before they are formatted. Every
+generated grammar provides `diagnose_error`:
+
+```rust
+if let Some(diagnostic) = calc::diagnose_error(&error) {
+    // Symbol IDs, not English prose.
+    let unexpected = diagnostic.unexpected;
+    let expected = &diagnostic.expected;
+    let token_position = diagnostic.position;
+    let unexpected_name = calc::symbol_name(unexpected);
+
+    // Recognized symbols with token ranges.
+    for entry in &diagnostic.stack {
+        inspect(entry.symbol, entry.start..entry.end);
+    }
+
+    // LR items: production identity, lhs/rhs symbols, and dot position.
+    for context in &diagnostic.contexts {
+        inspect_rule(context.rule, context.lhs, &context.rhs, context.dot);
+    }
+}
+```
+
+Applications can translate this data, convert it to an editor protocol, emit
+JSON, or apply their own ranking and presentation rules. `format_error` remains
+available as a reasonable English default, and is implemented using this same
+structured diagnosis.
 
 When a parse error occurs, you can call `recover` on the low-level `Parser` to find a minimum-cost repair and continue parsing. Recovery uses Dijkstra search over possible insert/delete edits to find the cheapest way to get the parser back on track.
 

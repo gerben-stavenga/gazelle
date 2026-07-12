@@ -50,12 +50,12 @@
 //! let mut parser = calc::Parser::<Eval>::new();
 //! let mut actions = Eval;
 //! // Precedence is supplied per-token — the grammar stays flat:
-//! parser.push(calc::Terminal::Num(1), &mut actions)?;
-//! parser.push(calc::Terminal::Op('+', Precedence::Left(1)), &mut actions)?;
-//! parser.push(calc::Terminal::Num(2), &mut actions)?;
-//! parser.push(calc::Terminal::Op('*', Precedence::Left(2)), &mut actions)?;
-//! parser.push(calc::Terminal::Num(3), &mut actions)?;
-//! let result = parser.finish(&mut actions).map_err(|(p, gazelle::ParseError::Syntax { terminal })| p.format_error(terminal, None, None))?;
+//! parser = parser.push(calc::Terminal::Num(1), &mut actions)?;
+//! parser = parser.push(calc::Terminal::Op('+', Precedence::Left(1)), &mut actions)?;
+//! parser = parser.push(calc::Terminal::Num(2), &mut actions)?;
+//! parser = parser.push(calc::Terminal::Op('*', Precedence::Left(2)), &mut actions)?;
+//! parser = parser.push(calc::Terminal::Num(3), &mut actions)?;
+//! let result = parser.finish(&mut actions)?;
 //! assert_eq!(result, 7); // 1 + (2 * 3)
 //! ```
 //!
@@ -107,8 +107,9 @@ pub use table::{CompiledTable, Conflict, ErrorInfo};
 
 // Runtime parser types
 pub use runtime::{
-    Action, AstNode, Cst, CstParser, ErrorContext, ErrorType, FromAstNode, Ignore, ParseError,
-    ParseTable, Parser, Precedence, RecoveryInfo, Repair, Resolution, Token,
+    Action, AstNode, Cst, CstParser, DiagnosticStackEntry, ErrorContext, ErrorType, FromAstNode,
+    Ignore, ParseError, ParseTable, Parser, Precedence, RecoveryInfo, RecoveryParser, Repair,
+    Resolution, RuleContext, SyntaxDiagnostic, Token,
 };
 
 // Lexer DFA

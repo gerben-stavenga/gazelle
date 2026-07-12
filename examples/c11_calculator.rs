@@ -721,14 +721,14 @@ fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64
     let mut actions = Eval::new();
 
     while let Some(tok) = tokenizer.next(&actions.custom_ops)? {
-        parser
+        parser = parser
             .push(tok, &mut actions)
             .map_err(|e| format!("{:?}", e))?;
     }
     parser
         .finish(&mut actions)
-        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
-            p.format_error(terminal, None, None)
+        .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
+            recovery.format_error(terminal, c11_calc::Parser::<Eval>::error_info(), None, None)
         })?;
 
     Ok(actions.results)

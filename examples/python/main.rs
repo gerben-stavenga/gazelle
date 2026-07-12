@@ -157,23 +157,28 @@ type Parser = python::Parser<PyActions>;
 
 macro_rules! push {
     ($parser:expr, $actions:expr, $tok:expr) => {
-        $parser
-            .push($tok, $actions)
-            .map_err(|gazelle::ParseError::Syntax { terminal }| {
+        $parser = $parser.push($tok, $actions).map_err(
+            |gazelle::ParseError::Syntax { terminal, recovery }| {
                 format!(
                     "Parse error: {}",
-                    $parser.format_error(terminal, None, None)
+                    recovery.format_error(
+                        terminal,
+                        python::Parser::<PyActions>::error_info(),
+                        None,
+                        None,
+                    )
                 )
-            })?
+            },
+        )?
     };
 }
 
-fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), String> {
+fn lex(input: &str, mut parser: Parser, actions: &mut PyActions) -> Result<Parser, String> {
     let mut src = Scanner::new(input);
     let mut indent_stack: Vec<usize> = vec![0];
     let mut bracket_depth: usize = 0;
 
-    process_line_start(&mut src, &mut indent_stack, parser, actions)?;
+    parser = process_line_start(&mut src, &mut indent_stack, parser, actions)?;
 
     loop {
         // Skip horizontal whitespace, comments, and line continuations
@@ -202,13 +207,13 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
                 continue;
             }
             push!(parser, actions, Tok::Newline);
-            process_line_start(&mut src, &mut indent_stack, parser, actions)?;
+            parser = process_line_start(&mut src, &mut indent_stack, parser, actions)?;
             continue;
         }
 
         // EOF
         if src.at_end() {
-            return Ok(());
+            return Ok(parser);
         }
 
         // Identifier or keyword
@@ -350,9 +355,9 @@ fn lex(input: &str, parser: &mut Parser, actions: &mut PyActions) -> Result<(), 
 fn process_line_start(
     src: &mut Scanner<std::str::Chars<'_>>,
     indent_stack: &mut Vec<usize>,
-    parser: &mut Parser,
+    mut parser: Parser,
     actions: &mut PyActions,
-) -> Result<(), String> {
+) -> Result<Parser, String> {
     loop {
         let start = src.offset();
         src.skip_while(|c| c == ' ' || c == '\t');
@@ -376,7 +381,7 @@ fn process_line_start(
                     indent_stack.pop();
                     push!(parser, actions, Tok::Dedent);
                 }
-                return Ok(());
+                return Ok(parser);
             }
             _ => {
                 let current = *indent_stack.last().unwrap();
@@ -392,7 +397,7 @@ fn process_line_start(
                         return Err("dedent does not match any outer indentation level".into());
                     }
                 }
-                return Ok(());
+                return Ok(parser);
             }
         }
     }
@@ -578,13 +583,21 @@ const OPS: [(&str, OpFactory); 41] = [
 // =============================================================================
 
 pub fn parse(input: &str) -> Result<(), String> {
-    let mut parser = python::Parser::<PyActions>::new();
+    let parser = python::Parser::<PyActions>::new();
     let mut actions = PyActions;
-    lex(input, &mut parser, &mut actions)?;
+    let parser = lex(input, parser, &mut actions)?;
     parser
         .finish(&mut actions)
-        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
-            format!("Finish error: {}", p.format_error(terminal, None, None))
+        .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
+            format!(
+                "Finish error: {}",
+                recovery.format_error(
+                    terminal,
+                    python::Parser::<PyActions>::error_info(),
+                    None,
+                    None,
+                )
+            )
         })?;
     Ok(())
 }

@@ -134,7 +134,7 @@ impl<'a> gazelle::Action<token_format::Sentence<Self>> for Actions<'a> {
                 print_tree(&tree, 0, self.compiled, &parser.values);
                 println!();
             }
-            Err((cst, gazelle::ParseError::Syntax { terminal })) => {
+            Err((cst, gazelle::ParseError::Syntax { terminal, .. })) => {
                 let message = cst.format_error(terminal, self.compiled, None, None);
                 return Err(ActionError::Parse(message));
             }
@@ -179,7 +179,7 @@ impl<'a> gazelle::Action<token_format::Tokens<Self>> for Actions<'a> {
 
                 parser.values.push(value);
                 let res = parser.cst.push(token);
-                if let Err(gazelle::ParseError::Syntax { terminal }) = res {
+                if let Err(gazelle::ParseError::Syntax { terminal, .. }) = res {
                     let message = parser.cst.format_error(terminal, self.compiled, None, None);
                     return Err(ActionError::Parse(message));
                 }
@@ -243,27 +243,52 @@ fn run() -> Result<(), String> {
             break;
         };
 
-        parser.push(terminal, &mut actions).map_err(|e| match e {
-            gazelle::ParseError::Syntax { terminal } => {
-                format!("parse error: {}", parser.format_error(terminal, None, None))
+        parser = parser.push(terminal, &mut actions).map_err(|e| match e {
+            gazelle::ParseError::Syntax { terminal, recovery } => {
+                format!(
+                    "parse error: {}",
+                    recovery.format_error(
+                        terminal,
+                        token_format::Parser::<Actions>::error_info(),
+                        None,
+                        None
+                    )
+                )
             }
-            gazelle::ParseError::Action(ActionError::Parse(message)) => {
+            gazelle::ParseError::Action {
+                error: ActionError::Parse(message),
+                ..
+            } => {
                 format!("runtime parse error: {}", message)
             }
-            gazelle::ParseError::Action(ActionError::Runtime(e)) => format!("action error: {}", e),
+            gazelle::ParseError::Action {
+                error: ActionError::Runtime(e),
+                ..
+            } => format!("action error: {}", e),
         })?;
     }
-    parser.finish(&mut actions).map_err(|(p, e)| match e {
-        gazelle::ParseError::Syntax { terminal } => {
+    parser.finish(&mut actions).map_err(|e| match e {
+        gazelle::ParseError::Syntax { terminal, recovery } => {
             format!(
                 "parse error at end: {}",
-                p.format_error(terminal, None, None)
+                recovery.format_error(
+                    terminal,
+                    token_format::Parser::<Actions>::error_info(),
+                    None,
+                    None
+                )
             )
         }
-        gazelle::ParseError::Action(ActionError::Parse(message)) => {
+        gazelle::ParseError::Action {
+            error: ActionError::Parse(message),
+            ..
+        } => {
             format!("runtime parse error at end: {}", message)
         }
-        gazelle::ParseError::Action(ActionError::Runtime(e)) => {
+        gazelle::ParseError::Action {
+            error: ActionError::Runtime(e),
+            ..
+        } => {
             format!("action error at end: {}", e)
         }
     })?;

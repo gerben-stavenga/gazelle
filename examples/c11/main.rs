@@ -773,12 +773,17 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
         match tok {
             Some((t, span)) => {
                 token_texts.push(input[span.clone()].to_string());
-                parser.push(t, &mut actions).map_err(|e| {
+                parser = parser.push(t, &mut actions).map_err(|e| {
                     let (line, col) = lexer.src.line_col(span.start);
                     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
                     format!("Parse error at {line}:{col}: {}", {
-                        let gazelle::ParseError::Syntax { terminal } = e;
-                        parser.format_error(terminal, Some(&display_names), Some(&tokens))
+                        let gazelle::ParseError::Syntax { terminal, recovery } = e;
+                        recovery.format_error(
+                            terminal,
+                            c11::Parser::<CActions>::error_info(),
+                            Some(&display_names),
+                            Some(&tokens),
+                        )
                     },)
                 })?;
             }
@@ -789,10 +794,15 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
     parser
         .finish(&mut actions)
-        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
+        .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
             format!(
                 "Finish error: {}",
-                p.format_error(terminal, Some(&display_names), Some(&tokens))
+                recovery.format_error(
+                    terminal,
+                    c11::Parser::<CActions>::error_info(),
+                    Some(&display_names),
+                    Some(&tokens)
+                )
             )
         })
 }
@@ -843,8 +853,8 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
             resolution: tok.resolution(),
         };
         match parser.push(tok, &mut actions) {
-            Ok(()) => {}
-            Err(_) => {
+            Ok(next) => parser = next,
+            Err(error) => {
                 let error_idx = spans.len() - 1;
                 let mut buffer = vec![raw_token];
 
@@ -856,7 +866,8 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
                     });
                 }
 
-                let errors = parser.recover(&buffer);
+                let mut recovery = error.into_recovery();
+                let errors = recovery.recover(&buffer);
                 return to_result(&preprocessed, &lexer, &spans, errors, error_idx);
             }
         }
@@ -865,8 +876,9 @@ fn parse_with_recovery(input: &str) -> RecoveryResult {
     // Try to finish
     match parser.finish(&mut actions) {
         Ok(_) => RecoveryResult { errors: vec![] },
-        Err((mut p, _)) => {
-            let errors = p.recover(&[]);
+        Err(error) => {
+            let mut recovery = error.into_recovery();
+            let errors = recovery.recover(&[]);
             to_result(&preprocessed, &lexer, &spans, errors, spans.len())
         }
     }
@@ -1502,7 +1514,7 @@ void f(void) {
         for tok in tokens {
             // Safety: Eval and Show have identical terminal payload types
             let tok: expr::Terminal<Show> = unsafe { std::mem::transmute(tok) };
-            parser.push(tok, &mut actions).unwrap();
+            parser = parser.push(tok, &mut actions).unwrap();
         }
         parser.finish(&mut actions).ok().unwrap()
     }
@@ -1619,14 +1631,14 @@ void f(void) {
         let mut parser = expr::Parser::<Eval>::new();
         let mut actions = Eval;
         for tok in tokens {
-            parser
+            parser = parser
                 .push(tok, &mut actions)
                 .map_err(|e| format!("{:?}", e))?;
         }
         parser
             .finish(&mut actions)
-            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
-                p.format_error(terminal, None, None)
+            .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
+                recovery.format_error(terminal, expr::Parser::<Eval>::error_info(), None, None)
             })
     }
 

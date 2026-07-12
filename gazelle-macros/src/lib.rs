@@ -46,12 +46,12 @@
 //!
 //! let mut parser = expr::Parser::<Eval>::new();
 //! let mut eval = Eval;
-//! parser.push(expr::Terminal::Num(1.0), &mut eval).unwrap();
-//! parser.push(expr::Terminal::Op('+', Precedence::Left(1)), &mut eval).unwrap();
-//! parser.push(expr::Terminal::Num(2.0), &mut eval).unwrap();
-//! parser.push(expr::Terminal::Op('*', Precedence::Left(2)), &mut eval).unwrap();
-//! parser.push(expr::Terminal::Num(3.0), &mut eval).unwrap();
-//! let result = parser.finish(&mut eval).map_err(|(_, e)| e).unwrap();
+//! parser = parser.push(expr::Terminal::Num(1.0), &mut eval).unwrap();
+//! parser = parser.push(expr::Terminal::Op('+', Precedence::Left(1)), &mut eval).unwrap();
+//! parser = parser.push(expr::Terminal::Num(2.0), &mut eval).unwrap();
+//! parser = parser.push(expr::Terminal::Op('*', Precedence::Left(2)), &mut eval).unwrap();
+//! parser = parser.push(expr::Terminal::Num(3.0), &mut eval).unwrap();
+//! let result = parser.finish(&mut eval).unwrap();
 //! assert_eq!(result, 7.0);  // 1 + (2 * 3)
 //! ```
 

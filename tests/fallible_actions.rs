@@ -34,10 +34,10 @@ fn test_action_ok() {
     let mut parser = fallible::Parser::<CheckActions>::new();
     let mut actions = CheckActions;
 
-    parser
+    parser = parser
         .push(fallible::Terminal::Num(42), &mut actions)
         .unwrap();
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 42);
 }
 
@@ -58,10 +58,10 @@ fn test_discard_blanket() {
     let mut parser = fallible::Parser::<DiscardActions>::new();
     let mut actions = DiscardActions;
 
-    parser
+    parser = parser
         .push(fallible::Terminal::Num(42), &mut actions)
         .unwrap();
-    let _result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let _result = parser.finish(&mut actions).unwrap();
 }
 
 // Test that ReduceNode identity blanket works: type Expr = fallible::Expr<Self>
@@ -81,9 +81,9 @@ fn test_cst_blanket() {
     let mut parser = fallible::Parser::<CstActions>::new();
     let mut actions = CstActions;
 
-    parser
+    parser = parser
         .push(fallible::Terminal::Num(42), &mut actions)
         .unwrap();
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert!(matches!(result, fallible::Expr::Num(42)));
 }

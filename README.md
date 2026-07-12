@@ -62,7 +62,7 @@ Traditional parsers hide the parse loop, requiring globals or hacks. Gazelle use
 ```rust
 loop {
     let token = lexer.next(&actions.ctx)?;  // lexer sees current state
-    parser.push(token, &mut actions)?;       // actions update state
+    parser = parser.push(token, &mut actions)?; // actions update state
     // next iteration: lexer sees updated state
 }
 ```
@@ -310,11 +310,11 @@ fn main() {
     let mut actions = Eval;
 
     // Push tokens (you control the loop)
-    parser.push(my_parser::Terminal::Num(2), &mut actions).unwrap();
-    parser.push(my_parser::Terminal::Op('+', Precedence::Left(1)), &mut actions).unwrap();
-    parser.push(my_parser::Terminal::Num(3), &mut actions).unwrap();
+    parser = parser.push(my_parser::Terminal::Num(2), &mut actions).unwrap();
+    parser = parser.push(my_parser::Terminal::Op('+', Precedence::Left(1)), &mut actions).unwrap();
+    parser = parser.push(my_parser::Terminal::Num(3), &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 5);
 }
 ```

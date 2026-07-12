@@ -298,25 +298,55 @@ pub enum Resolution {
 /// Parse error: either a syntax error (unexpected terminal) or a user action error.
 ///
 /// The default type parameter `E = Infallible` means `ParseError` alone represents
-/// syntax-only errors (e.g. from the raw `Parser` API). Generated typed parsers
-/// return `ParseError<A::Error>` which can also carry action errors.
-///
-/// The parser remains in a valid state after a syntax error, so you can call
-/// `parser.format_error()` to get a detailed error message.
-#[derive(Debug, Clone)]
-pub enum ParseError<E = core::convert::Infallible> {
+/// syntax-only errors from the raw `Parser` API; its recovery payload is `()`.
+/// Generated typed parsers return
+/// `ParseError<A::Error, RecoveryParser<'static>>`, transferring ownership of
+/// the syntax-only parser state into the error.
+#[derive(Clone)]
+pub enum ParseError<E = core::convert::Infallible, R = ()> {
     /// Parser encountered an unexpected terminal.
-    Syntax { terminal: SymbolId },
+    Syntax { terminal: SymbolId, recovery: R },
     /// A user action (reduction) returned an error.
-    Action(E),
+    Action { error: E, recovery: R },
 }
 
 impl ParseError<core::convert::Infallible> {
     /// Cast a syntax-only error (`ParseError<Infallible>`) to any `ParseError<F>`.
     pub fn cast<F>(self) -> ParseError<F> {
         match self {
-            ParseError::Syntax { terminal } => ParseError::Syntax { terminal },
-            ParseError::Action(e) => match e {},
+            ParseError::Syntax { terminal, recovery } => ParseError::Syntax { terminal, recovery },
+            ParseError::Action { error, .. } => match error {},
+        }
+    }
+}
+
+impl<E, R> ParseError<E, R> {
+    /// Borrow the syntax-only parser state carried by this error.
+    pub fn recovery(&self) -> &R {
+        match self {
+            ParseError::Syntax { recovery, .. } | ParseError::Action { recovery, .. } => recovery,
+        }
+    }
+
+    /// Consume the error and return its syntax-only parser state.
+    pub fn into_recovery(self) -> R {
+        match self {
+            ParseError::Syntax { recovery, .. } | ParseError::Action { recovery, .. } => recovery,
+        }
+    }
+}
+
+impl<E: core::fmt::Debug, R> core::fmt::Debug for ParseError<E, R> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ParseError::Syntax { terminal, .. } => f
+                .debug_struct("Syntax")
+                .field("terminal", terminal)
+                .finish_non_exhaustive(),
+            ParseError::Action { error, .. } => f
+                .debug_struct("Action")
+                .field("error", error)
+                .finish_non_exhaustive(),
         }
     }
 }
@@ -369,6 +399,41 @@ use alloc::rc::Rc;
 use alloc::string::{String, ToString};
 use alloc::{format, vec, vec::Vec};
 use core::cmp::Reverse;
+
+/// Structured description of a syntax error in grammar terms.
+///
+/// This contains symbol and rule identities rather than presentation text, so
+/// applications can translate, serialize, or otherwise render it themselves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyntaxDiagnostic {
+    /// Terminal that could not be accepted.
+    pub unexpected: SymbolId,
+    /// Source-token index at which the error was detected.
+    pub position: usize,
+    /// Terminals accepted from the error state.
+    pub expected: Vec<SymbolId>,
+    /// Recently recognized grammar symbols and their token ranges.
+    pub stack: Vec<DiagnosticStackEntry>,
+    /// Active productions that best explain the parser's position.
+    pub contexts: Vec<RuleContext>,
+}
+
+/// A recognized grammar symbol on the parser stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiagnosticStackEntry {
+    pub symbol: SymbolId,
+    pub start: usize,
+    pub end: usize,
+}
+
+/// An LR item represented as a grammar production and dot position.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleContext {
+    pub rule: usize,
+    pub lhs: SymbolId,
+    pub rhs: Vec<SymbolId>,
+    pub dot: usize,
+}
 
 /// Convert `__foo_star` → `foo*`, `__foo_plus` → `foo+`, `__foo_opt` → `foo?`,
 /// `__item_sep_comma` → `item % comma`.
@@ -659,7 +724,10 @@ impl<'a> Parser<'a> {
                     Ok(None)
                 }
             }
-            ParserOp::Error => Err(ParseError::Syntax { terminal }),
+            ParserOp::Error => Err(ParseError::Syntax {
+                terminal,
+                recovery: (),
+            }),
         }
     }
 
@@ -768,6 +836,15 @@ impl<'a> Parser<'a> {
         self.token_count
     }
 
+    /// Consume this parser into a syntax-only recovery state.
+    ///
+    /// This is mainly used by generated parsers after their semantic value
+    /// stack has been discarded. The returned type exposes diagnostics and
+    /// repair search, but no semantic parsing operations.
+    pub fn into_recovery(self) -> RecoveryParser<'a> {
+        RecoveryParser { parser: self }
+    }
+
     /// Get the LR automaton state at a given stack depth (0 = bottom of stack).
     pub fn state_at(&self, depth: usize) -> usize {
         let idx = depth + 1;
@@ -775,6 +852,68 @@ impl<'a> Parser<'a> {
             self.stack[idx].state
         } else {
             self.state.state
+        }
+    }
+
+    /// Describe a syntax error as grammar-level data without formatting it.
+    pub fn diagnose(&self, terminal: SymbolId, ctx: &impl ErrorContext) -> SyntaxDiagnostic {
+        let mut full_stack: Vec<StackEntry> = self.stack.to_vec();
+        full_stack.push(self.state);
+
+        let nullable = compute_nullable(&self.table, ctx);
+        let mut relevant_items = Vec::new();
+        self.collect_relevant_items(
+            ctx,
+            self.state.state,
+            self.stack.len() + 1,
+            &mut relevant_items,
+        );
+
+        let mut expected: Vec<_> = self
+            .compute_expected(
+                ctx,
+                &relevant_items,
+                &nullable,
+                self.table.num_terminals as usize,
+            )
+            .into_iter()
+            .map(|id| SymbolId(id as u32))
+            .collect();
+        expected.sort_by_key(|id| id.0);
+        expected.dedup();
+
+        let stack = full_stack
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter_map(|(i, entry)| {
+                let end = full_stack
+                    .get(i + 1)
+                    .map_or(self.token_count, |next| next.token_idx);
+                (end > entry.token_idx).then(|| DiagnosticStackEntry {
+                    symbol: ctx.state_symbol(entry.state),
+                    start: entry.token_idx,
+                    end,
+                })
+            })
+            .collect();
+
+        let contexts = relevant_items
+            .into_iter()
+            .map(|(rule, dot)| RuleContext {
+                rule,
+                lhs: self.table.rule_info(rule).0,
+                rhs: ctx.rule_rhs(rule).iter().copied().map(SymbolId).collect(),
+                dot,
+            })
+            .collect();
+
+        SyntaxDiagnostic {
+            unexpected: terminal,
+            position: self.token_count,
+            expected,
+            stack,
+            contexts,
         }
     }
 
@@ -797,7 +936,7 @@ impl<'a> Parser<'a> {
     /// loop {
     ///     let (line, col) = src.line_col();
     ///     let tok = lex_one_token(&mut src);
-    ///     if let Err(ParseError::Syntax { terminal }) = parser.push(tok, &mut actions) {
+    ///     if let Err(ParseError::Syntax { terminal, .. }) = parser.push(tok, &mut actions) {
     ///         let msg = parser.format_error(terminal, ctx, None, None);
     ///         return Err(format!("{line}:{col}: {msg}"));
     ///     }
@@ -812,10 +951,8 @@ impl<'a> Parser<'a> {
     ) -> String {
         let display_names = display_names.unwrap_or(&[]);
         let tokens = tokens.unwrap_or(&[]);
-        // Build full stack for error analysis
-        let mut full_stack: Vec<StackEntry> = self.stack.to_vec();
-        full_stack.push(self.state);
-        let error_token_idx = self.token_count;
+        let diagnostic = self.diagnose(terminal, ctx);
+        let error_token_idx = diagnostic.position;
 
         let display = |id: SymbolId| -> &str {
             let name = ctx.symbol_name(id);
@@ -826,38 +963,11 @@ impl<'a> Parser<'a> {
                 .unwrap_or(name)
         };
 
-        // Helper: compute stack spans
-        let stack_spans = || -> Vec<(usize, usize, usize)> {
-            let mut spans = Vec::with_capacity(full_stack.len());
-            for i in 0..full_stack.len() {
-                let start = full_stack[i].token_idx;
-                let end = if i + 1 < full_stack.len() {
-                    full_stack[i + 1].token_idx
-                } else {
-                    error_token_idx
-                };
-                spans.push((start, end, full_stack[i].state));
-            }
-            spans
-        };
-
-        let nullable = compute_nullable(&self.table, ctx);
-        let num_terminals = self.table.num_terminals as usize;
-
-        // Collect relevant items and compute expected symbols
-        let mut relevant_items = Vec::new();
-        self.collect_relevant_items(
-            ctx,
-            self.state.state,
-            self.stack.len() + 1,
-            &mut relevant_items,
-        );
-        let expected_syms = self.compute_expected(ctx, &relevant_items, &nullable, num_terminals);
-
         // Convert to display names
-        let mut expected: Vec<_> = expected_syms
+        let mut expected: Vec<_> = diagnostic
+            .expected
             .iter()
-            .map(|&sym| format_sym(display(SymbolId(sym as u32))))
+            .map(|&sym| format_sym(display(sym)))
             .collect();
         expected.sort();
         expected.dedup();
@@ -875,30 +985,23 @@ impl<'a> Parser<'a> {
 
         // Show parsed stack with token spans
         if !tokens.is_empty() && error_token_idx <= tokens.len() {
-            let spans = stack_spans();
-            // Skip state 0 (initial), show recent entries
-            let relevant: Vec<_> = spans
-                .into_iter()
-                .skip(1) // skip initial state
-                .filter(|(start, end, _)| end > start) // skip empty spans
-                .collect();
-
-            if !relevant.is_empty() {
+            if !diagnostic.stack.is_empty() {
                 // Build two lines: tokens and underlines with names
                 let mut token_line = String::new();
                 let mut label_line = String::new();
 
-                for (start, end, state) in relevant.iter().rev().take(4).rev() {
-                    let sym = ctx.state_symbol(*state);
-                    let name = format_sym(display(sym));
+                for entry in diagnostic.stack.iter().rev().take(4).rev() {
+                    let start = entry.start;
+                    let end = entry.end;
+                    let name = format_sym(display(entry.symbol));
 
                     // Get token text for this span
                     let span_text = if end - start == 1 {
-                        tokens[*start].to_string()
+                        tokens[start].to_string()
                     } else if end - start <= 3 {
-                        tokens[*start..*end].join(" ")
+                        tokens[start..end].join(" ")
                     } else {
-                        format!("{} ... {}", tokens[*start], tokens[end - 1])
+                        format!("{} ... {}", tokens[start], tokens[end - 1])
                     };
 
                     let width = span_text.chars().count().max(name.len());
@@ -913,11 +1016,12 @@ impl<'a> Parser<'a> {
 
                 msg.push_str(&format!("\n  {}\n  {}", token_line, label_line));
             }
-        } else if full_stack.len() > 1 {
+        } else if !diagnostic.stack.is_empty() {
             // Fallback: show grammar symbols from stack
-            let path: Vec<_> = full_stack[1..]
+            let path: Vec<_> = diagnostic
+                .stack
                 .iter()
-                .map(|e| display(ctx.state_symbol(e.state)))
+                .map(|entry| display(entry.symbol))
                 .collect();
             msg.push_str(&format!("\n  after: {}", path.join(" ")));
         }
@@ -927,36 +1031,31 @@ impl<'a> Parser<'a> {
         // grammars, a single error state can contain many sibling alternatives
         // (postfix operators are a common example). Keep the most progressed
         // item per nonterminal, then show at most four surrounding contexts.
-        let mut display_items = relevant_items.clone();
-        display_items.sort_by(|&(rule_a, dot_a), &(rule_b, dot_b)| {
-            dot_b
-                .cmp(&dot_a)
-                .then_with(|| ctx.rule_rhs(rule_b).len().cmp(&ctx.rule_rhs(rule_a).len()))
-                .then_with(|| rule_a.cmp(&rule_b))
+        let mut display_items = diagnostic.contexts.clone();
+        display_items.sort_by(|a, b| {
+            b.dot
+                .cmp(&a.dot)
+                .then_with(|| b.rhs.len().cmp(&a.rhs.len()))
+                .then_with(|| a.rule.cmp(&b.rule))
         });
         let mut seen_lhs = BTreeSet::new();
-        display_items.retain(|&(rule, _)| {
-            let lhs = self.table.rule_info(rule).0;
-            seen_lhs.insert(format_sym(display(lhs)))
-        });
+        display_items.retain(|item| seen_lhs.insert(format_sym(display(item.lhs))));
         display_items.truncate(4);
         let mut seen = BTreeSet::new();
 
-        for &(rule, dot) in &display_items {
-            let rhs = ctx.rule_rhs(rule);
-            let lhs = self.table.rule_info(rule).0;
-            if ctx.symbol_name(lhs) == "__start" {
+        for item in &display_items {
+            if ctx.symbol_name(item.lhs) == "__start" {
                 continue;
             }
-            let lhs_name = format_sym(display(lhs));
+            let lhs_name = format_sym(display(item.lhs));
 
-            let before: Vec<_> = rhs[..dot]
+            let before: Vec<_> = item.rhs[..item.dot]
                 .iter()
-                .map(|&id| format_sym(display(SymbolId(id))))
+                .map(|&id| format_sym(display(id)))
                 .collect();
-            let after: Vec<_> = rhs[dot..]
+            let after: Vec<_> = item.rhs[item.dot..]
                 .iter()
-                .map(|&id| format_sym(display(SymbolId(id))))
+                .map(|&id| format_sym(display(id)))
                 .collect();
             let line = format!(
                 "\n  in {}: {} \u{2022} {}",
@@ -1340,6 +1439,51 @@ impl<'a> Parser<'a> {
             });
         }
         errors
+    }
+}
+
+/// Syntax-only parser state used after semantic parsing has failed.
+///
+/// A generated parser cannot reconstruct semantic values for inserted tokens
+/// or undo action side effects. It therefore consumes itself when entering
+/// recovery and returns this restricted type, which cannot call semantic
+/// `push` or `finish` operations.
+#[derive(Clone)]
+pub struct RecoveryParser<'a> {
+    parser: Parser<'a>,
+}
+
+impl<'a> RecoveryParser<'a> {
+    /// Describe the current syntax error as grammar-level data.
+    pub fn diagnose(&self, terminal: SymbolId, ctx: &impl ErrorContext) -> SyntaxDiagnostic {
+        self.parser.diagnose(terminal, ctx)
+    }
+
+    /// Search the remaining token buffer for minimum-cost repairs.
+    pub fn recover(&mut self, buffer: &[Token]) -> Vec<RecoveryInfo> {
+        self.parser.recover(buffer)
+    }
+
+    /// Format a syntax error using the current recovered parser state.
+    pub fn format_error(
+        &self,
+        terminal: SymbolId,
+        ctx: &impl ErrorContext,
+        display_names: Option<&[(&str, &str)]>,
+        tokens: Option<&[&str]>,
+    ) -> String {
+        self.parser
+            .format_error(terminal, ctx, display_names, tokens)
+    }
+
+    /// Get the current LR automaton state.
+    pub fn state(&self) -> usize {
+        self.parser.state()
+    }
+
+    /// Get the current source-token position.
+    pub fn token_count(&self) -> usize {
+        self.parser.token_count()
     }
 }
 
@@ -1816,7 +1960,7 @@ mod tests {
         let b_id = compiled.symbol_id("b").unwrap();
         let token = Token::new(b_id);
 
-        let ParseError::Syntax { terminal } = parser.maybe_reduce(Some(token)).unwrap_err();
+        let ParseError::Syntax { terminal, .. } = parser.maybe_reduce(Some(token)).unwrap_err();
         let msg = parser.format_error(terminal, &compiled, None, None);
 
         assert!(msg.contains("unexpected"), "msg: {}", msg);

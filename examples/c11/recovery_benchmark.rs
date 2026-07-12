@@ -16,7 +16,7 @@ fn lex_valid_source(input: &str) -> Vec<(gazelle::Token, Span)> {
             },
             span,
         ));
-        parser.push(terminal, &mut actions).unwrap();
+        parser = parser.push(terminal, &mut actions).unwrap();
     }
     assert!(
         parser.finish(&mut actions).is_ok(),
