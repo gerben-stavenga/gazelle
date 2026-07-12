@@ -1424,7 +1424,6 @@ impl<
         if rule == 0 {
             return Ok(());
         }
-        actions.set_token_range(start_idx, self.parser.token_count());
         let original_rule_idx = rule - 1;
         let value = match original_rule_idx {
             0usize => {
@@ -1438,6 +1437,7 @@ impl<
                         self.value_stack.pop().unwrap().____expect_decl_star,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____expect_decl_star: core::mem::ManuallyDrop::new(
                         <A as gazelle::Action<
@@ -1447,6 +1447,7 @@ impl<
                 }
             }
             1usize => {
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____expect_decl_star: core::mem::ManuallyDrop::new(
                         <A as gazelle::Action<
@@ -1467,6 +1468,7 @@ impl<
                         self.value_stack.pop().unwrap().____terminal_item_sep_comma,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____terminal_item_sep_comma: core::mem::ManuallyDrop::new(
                         <A as gazelle::Action<
@@ -1481,6 +1483,7 @@ impl<
                         self.value_stack.pop().unwrap().__terminal_item,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 {
                     let __seq = <A as gazelle::Action<
                         SeqNode<Vec<A::TerminalItem>, A::TerminalItem>,
@@ -1505,6 +1508,7 @@ impl<
                         self.value_stack.pop().unwrap().____rule_plus,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____rule_plus: core::mem::ManuallyDrop::new(
                         <A as gazelle::Action<
@@ -1519,6 +1523,7 @@ impl<
                         self.value_stack.pop().unwrap().__rule,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 {
                     let __seq = <A as gazelle::Action<
                         SeqNode<Vec<A::Rule>, A::Rule>,
@@ -1558,6 +1563,7 @@ impl<
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __grammar_def: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(
@@ -1580,6 +1586,7 @@ impl<
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __expect_decl: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, ExpectDecl::ExpectDecl(v1, v2))?,
@@ -1592,11 +1599,13 @@ impl<
                         self.value_stack.pop().unwrap().__modifier,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____modifier_opt: core::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
             9usize => {
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____modifier_opt: core::mem::ManuallyDrop::new(None),
                 }
@@ -1607,11 +1616,13 @@ impl<
                         self.value_stack.pop().unwrap().__type_annot,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____type_annot_opt: core::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
             11usize => {
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____type_annot_opt: core::mem::ManuallyDrop::new(None),
                 }
@@ -1622,11 +1633,13 @@ impl<
                         self.value_stack.pop().unwrap().__regex_annot,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____regex_annot_opt: core::mem::ManuallyDrop::new(Some(v0)),
                 }
             }
             13usize => {
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____regex_annot_opt: core::mem::ManuallyDrop::new(None),
                 }
@@ -1652,6 +1665,7 @@ impl<
                         self.value_stack.pop().unwrap().____modifier_opt,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __terminal_item: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(
@@ -1664,6 +1678,7 @@ impl<
             15usize => {
                 let _ = self.value_stack.pop().unwrap();
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __type_annot: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, TypeAnnot::TypeAnnot)?,
@@ -1677,6 +1692,7 @@ impl<
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __regex_annot: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, RegexAnnot::RegexAnnot(v1))?,
@@ -1695,6 +1711,7 @@ impl<
                         self.value_stack.pop().unwrap().____alt_sep_pipe,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____alt_sep_pipe: core::mem::ManuallyDrop::new(
                         <A as gazelle::Action<
@@ -1709,6 +1726,7 @@ impl<
                         self.value_stack.pop().unwrap().__alt,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 {
                     let __seq = <A as gazelle::Action<
                         SeqNode<Vec<A::Alt>, A::Alt>,
@@ -1735,6 +1753,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __rule: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Rule::Rule(v0, v2))?,
@@ -1752,6 +1771,7 @@ impl<
                         self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     ____term_plus: core::mem::ManuallyDrop::new(
                         <A as gazelle::Action<
@@ -1766,6 +1786,7 @@ impl<
                         self.value_stack.pop().unwrap().__term,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 {
                     let __seq = <A as gazelle::Action<
                         SeqNode<Vec<A::Term>, A::Term>,
@@ -1790,6 +1811,7 @@ impl<
                         self.value_stack.pop().unwrap().____term_plus,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __alt: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Alt::Alt(v0, v1))?,
@@ -1803,6 +1825,7 @@ impl<
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __variant: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Variant::Variant(v1))?,
@@ -1823,6 +1846,7 @@ impl<
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymSep(v1, v3))?,
@@ -1849,6 +1873,7 @@ impl<
                     )
                 };
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymSepAs(v1, v3, v6))?,
@@ -1862,6 +1887,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymOpt(v0))?,
@@ -1875,6 +1901,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymStar(v0))?,
@@ -1894,6 +1921,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymStarAs(v0, v3))?,
@@ -1907,6 +1935,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymPlus(v0))?,
@@ -1926,6 +1955,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymPlusAs(v0, v3))?,
@@ -1938,6 +1968,7 @@ impl<
                         self.value_stack.pop().unwrap().__ident,
                     )
                 };
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymPlain(v0))?,
@@ -1946,6 +1977,7 @@ impl<
             }
             32usize => {
                 let _ = self.value_stack.pop().unwrap();
+                actions.set_token_range(start_idx, self.parser.token_count());
                 __Value {
                     __term: core::mem::ManuallyDrop::new(
                         gazelle::Action::build(actions, Term::SymEmpty)?,

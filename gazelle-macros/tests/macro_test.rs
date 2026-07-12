@@ -577,6 +577,8 @@ struct ReductionFailed;
 
 struct DropActions {
     fail: bool,
+    panic_in_range: bool,
+    panic_in_action: bool,
 }
 
 impl gazelle::ErrorType for DropActions {
@@ -586,11 +588,16 @@ impl gazelle::ErrorType for DropActions {
 impl drop_union::Types for DropActions {
     type Item = Tracked;
     type Pair = Vec<Tracked>;
+
+    fn set_token_range(&mut self, _start: usize, _end: usize) {
+        assert!(!self.panic_in_range, "panic from set_token_range");
+    }
 }
 
 impl Action<drop_union::Pair<Self>> for DropActions {
     fn build(&mut self, node: drop_union::Pair<Self>) -> Result<Vec<Tracked>, Self::Error> {
         let drop_union::Pair::Pair(left, right) = node;
+        assert!(!self.panic_in_action, "panic from Action::build");
         if self.fail {
             Err(ReductionFailed)
         } else {
@@ -610,7 +617,11 @@ fn observed_drops(drops: &std::rc::Rc<Vec<std::cell::Cell<usize>>>) -> Vec<usize
 #[test]
 fn semantic_union_drops_successful_result_once() {
     let drops = drop_counts(2);
-    let mut actions = DropActions { fail: false };
+    let mut actions = DropActions {
+        fail: false,
+        panic_in_range: false,
+        panic_in_action: false,
+    };
     let parser = drop_union::Parser::<DropActions>::new();
     let parser = parser
         .push(
@@ -634,7 +645,11 @@ fn semantic_union_drops_successful_result_once() {
 #[test]
 fn semantic_union_drops_stack_and_rejected_terminal_on_syntax_error() {
     let drops = drop_counts(3);
-    let mut actions = DropActions { fail: false };
+    let mut actions = DropActions {
+        fail: false,
+        panic_in_range: false,
+        panic_in_action: false,
+    };
     let parser = drop_union::Parser::<DropActions>::new();
     let parser = parser
         .push(
@@ -666,7 +681,11 @@ fn semantic_union_drops_stack_and_rejected_terminal_on_syntax_error() {
 #[test]
 fn semantic_union_drops_reduction_inputs_once_on_action_error() {
     let drops = drop_counts(2);
-    let mut actions = DropActions { fail: true };
+    let mut actions = DropActions {
+        fail: true,
+        panic_in_range: false,
+        panic_in_action: false,
+    };
     let parser = drop_union::Parser::<DropActions>::new();
     let parser = parser
         .push(
@@ -691,5 +710,52 @@ fn semantic_union_drops_reduction_inputs_once_on_action_error() {
     ));
     assert_eq!(observed_drops(&drops), [1, 1]);
     drop(error);
+    assert_eq!(observed_drops(&drops), [1, 1]);
+}
+
+fn parser_with_two_tracked_items(
+    drops: &std::rc::Rc<Vec<std::cell::Cell<usize>>>,
+    actions: &mut DropActions,
+) -> drop_union::Parser<DropActions> {
+    let parser = drop_union::Parser::<DropActions>::new();
+    let parser = parser
+        .push(drop_union::Terminal::Item(Tracked::new(0, drops)), actions)
+        .unwrap();
+    parser
+        .push(drop_union::Terminal::Item(Tracked::new(1, drops)), actions)
+        .unwrap()
+}
+
+#[test]
+fn semantic_union_is_unwind_safe_when_range_callback_panics() {
+    let drops = drop_counts(2);
+    let mut actions = DropActions {
+        fail: false,
+        panic_in_range: true,
+        panic_in_action: false,
+    };
+    let parser = parser_with_two_tracked_items(&drops, &mut actions);
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = parser.finish(&mut actions);
+    }));
+    assert!(panic.is_err());
+    assert_eq!(observed_drops(&drops), [1, 1]);
+}
+
+#[test]
+fn semantic_union_is_unwind_safe_when_action_panics() {
+    let drops = drop_counts(2);
+    let mut actions = DropActions {
+        fail: false,
+        panic_in_range: false,
+        panic_in_action: true,
+    };
+    let parser = parser_with_two_tracked_items(&drops, &mut actions);
+
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _ = parser.finish(&mut actions);
+    }));
+    assert!(panic.is_err());
     assert_eq!(observed_drops(&drops), [1, 1]);
 }
