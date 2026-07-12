@@ -184,6 +184,11 @@ fn recover_direct_api() {
     let remaining = vec![id, semi];
     let errors = parser.recover(&remaining);
     assert!(!errors.is_empty(), "expected recovery errors");
+
+    assert!(
+        matches!(parser.maybe_reduce(None), Ok(Some((0, _, _)))),
+        "recover should leave the parser in the successful repaired state"
+    );
 }
 
 /// Test recovery at EOF (missing semicolon, no remaining tokens).

@@ -100,6 +100,41 @@ fn error_multiple_expected() {
     assert_eq!(msg, "unexpected 'c', expected: S");
 }
 
+#[test]
+fn error_deduplicates_display_names() {
+    let grammar = parse_grammar(
+        r#"
+        start S;
+        terminals { x, a, b, bad }
+        S = x A => a | x B => b;
+        A = a => a;
+        B = b => b;
+    "#,
+    )
+    .unwrap();
+
+    let compiled = CompiledTable::build(&grammar).unwrap();
+    let mut parser = Parser::new(compiled.table());
+    let x = Token::new(compiled.symbol_id("x").unwrap());
+    parser.shift(x);
+
+    let bad = Token::new(compiled.symbol_id("bad").unwrap());
+    let err = parser.maybe_reduce(Some(bad)).unwrap_err();
+    let gazelle::ParseError::Syntax { terminal } = err;
+    let msg = parser.format_error(
+        terminal,
+        &compiled,
+        Some(&[("A", "value"), ("B", "value")]),
+        None,
+    );
+
+    assert!(
+        msg.starts_with("unexpected 'bad', expected: value"),
+        "{msg}"
+    );
+    assert!(!msg.contains("value, value"), "{msg}");
+}
+
 /// Sequence grammar: S -> a b c
 #[test]
 fn error_in_sequence() {
