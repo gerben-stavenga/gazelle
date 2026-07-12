@@ -999,6 +999,7 @@ pub(crate) fn build_minimal_automaton(grammar: &GrammarInternal) -> AutomatonRes
 mod tests {
     use super::*;
     use crate::meta::parse_grammar;
+
     fn expr_grammar() -> GrammarInternal {
         to_grammar_internal(
             &parse_grammar(
@@ -1185,5 +1186,176 @@ mod tests {
         // And no conflicts
         assert_eq!(rr, 0, "minimal LR should have no reduce/reduce conflicts");
         assert_eq!(sr, 0, "minimal LR should have no shift/reduce conflicts");
+    }
+
+    #[cfg(feature = "codegen")]
+    fn distinct_canonical_item_sets(grammar: &GrammarInternal) -> usize {
+        let first_sets = FirstSets::compute(grammar);
+        let (nfa, info) = build_lr_nfa(grammar, &first_sets);
+        let (dfa, nfa_sets) = crate::automaton::subset_construction(&nfa);
+        let mut distinct = alloc::collections::BTreeSet::new();
+
+        for nfa_set in nfa_sets.iter().take(dfa.num_states()) {
+            let mut items: Vec<_> = nfa_set
+                .iter()
+                .copied()
+                .filter(|&state| state < info.items.len())
+                .collect();
+            if !items.is_empty() {
+                items.sort_unstable();
+                distinct.insert(items);
+            }
+        }
+        distinct.len()
+    }
+
+    #[cfg(feature = "codegen")]
+    struct BisonStats {
+        states: usize,
+        shift_reduce: usize,
+        reduce_reduce: usize,
+    }
+
+    #[cfg(feature = "codegen")]
+    fn bison_stats(yacc: &str, lr_type: &str, name: &str) -> BisonStats {
+        use std::process::Command;
+
+        let dir = std::env::temp_dir().join(format!(
+            "gazelle-bison-{}-{}-{}",
+            std::process::id(),
+            name,
+            lr_type
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let grammar_path = dir.join("grammar.y");
+        let report_path = dir.join("grammar.output");
+        let parser_path = dir.join("grammar.c");
+        std::fs::write(&grammar_path, yacc).unwrap();
+
+        let output = Command::new("bison")
+            .arg(format!("-Dlr.type={lr_type}"))
+            .arg("--report=states")
+            .arg(format!("--report-file={}", report_path.display()))
+            .arg("-o")
+            .arg(&parser_path)
+            .arg(&grammar_path)
+            .output()
+            .expect("GAZELLE_BISON_REGRESSION requires GNU Bison");
+        assert!(
+            output.status.success(),
+            "bison failed for {name} ({lr_type}): {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let report = std::fs::read_to_string(&report_path).unwrap();
+        let states = report
+            .lines()
+            .filter_map(|line| line.strip_prefix("State "))
+            .filter(|suffix| suffix.parse::<usize>().is_ok())
+            .count();
+        let conflict_count = |kind: &str| {
+            report
+                .lines()
+                .filter(|line| line.starts_with("State ") && line.contains(" conflicts:"))
+                .map(|line| {
+                    let words: Vec<_> = line.split_whitespace().collect();
+                    words
+                        .iter()
+                        .position(|word| *word == kind)
+                        .and_then(|index| index.checked_sub(1))
+                        .and_then(|index| words[index].trim_end_matches(',').parse::<usize>().ok())
+                        .unwrap_or(0)
+                })
+                .sum()
+        };
+        let shift_reduce = conflict_count("shift/reduce");
+        let reduce_reduce = conflict_count("reduce/reduce");
+        std::fs::remove_dir_all(dir).unwrap();
+        BisonStats {
+            states,
+            shift_reduce,
+            reduce_reduce,
+        }
+    }
+
+    /// Independent regression oracle for the automaton construction. This is
+    /// opt-in locally because Bison is a system dependency; CI always enables
+    /// it through GAZELLE_BISON_REGRESSION.
+    #[cfg(feature = "codegen")]
+    #[test]
+    fn bison_canonical_and_ielr_state_counts() {
+        if std::env::var_os("GAZELLE_BISON_REGRESSION").is_none() {
+            return;
+        }
+
+        let mut grammars: Vec<_> = [
+            ("c11", "grammars/c11.gzl"),
+            ("python", "grammars/python.gzl"),
+            ("regex", "grammars/regex.gzl"),
+            ("meta", "grammars/meta.gzl"),
+        ]
+        .into_iter()
+        .map(|(name, path)| (name, std::fs::read_to_string(path).unwrap()))
+        .collect();
+        grammars.push((
+            "lr1_not_lalr",
+            r#"
+                start s;
+                terminals { a, b, e }
+                s = a ee a => aea | b ee b => beb | a f b => afb | b f a => bfa;
+                ee = e => e;
+                f = e => f;
+            "#
+            .to_string(),
+        ));
+
+        for (name, source) in grammars {
+            let grammar = parse_grammar(&source).unwrap();
+            let yacc = crate::codegen::to_yacc(&grammar).unwrap();
+
+            // The published comparison treats modifiers as plain terminals so
+            // Gazelle and Bison see the same bare grammar and default conflict
+            // resolution.
+            let mut bare = grammar.clone();
+            for terminal in &mut bare.terminals {
+                terminal.kind = crate::grammar::TerminalKind::Plain;
+            }
+            let internal = to_grammar_internal(&bare).unwrap();
+            let gazelle_canonical = distinct_canonical_item_sets(&internal);
+            let automaton = build_minimal_automaton(&internal);
+            let gazelle_final = automaton.num_item_states;
+            let gazelle_sr = automaton
+                .conflicts
+                .iter()
+                .filter(|conflict| matches!(conflict, crate::table::Conflict::ShiftReduce { .. }))
+                .count();
+            let gazelle_rr = automaton
+                .conflicts
+                .iter()
+                .filter(|conflict| matches!(conflict, crate::table::Conflict::ReduceReduce { .. }))
+                .count();
+
+            // Bison has one additional state for its synthetic $accept rule.
+            let bison_canonical = bison_stats(&yacc, "canonical-lr", name);
+            let bison_ielr = bison_stats(&yacc, "ielr", name);
+            assert_eq!(
+                gazelle_canonical,
+                bison_canonical.states - 1,
+                "canonical LR(1) state count differs for {name}"
+            );
+            assert_eq!(
+                gazelle_sr, bison_canonical.shift_reduce,
+                "canonical shift/reduce conflict count differs for {name}"
+            );
+            assert_eq!(
+                gazelle_rr, bison_canonical.reduce_reduce,
+                "canonical reduce/reduce conflict count differs for {name}"
+            );
+            assert_eq!(
+                gazelle_final,
+                bison_ielr.states - 1,
+                "minimized state count differs from Bison IELR for {name}"
+            );
+        }
     }
 }

@@ -341,9 +341,12 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
             fn do_reduce(&mut self, rule: usize, start_idx: usize, actions: &mut A) -> Result<(), A::Error> {
                 if rule == 0 { return Ok(()); }
 
-                actions.set_token_range(start_idx, self.parser.token_count());
                 let original_rule_idx = rule - 1;
 
+                // Each arm moves its semantic RHS into ordinary locals before
+                // invoking set_token_range or Action::build. This keeps the
+                // remaining semantic stack aligned with the reduced LR prefix
+                // if either user callback unwinds.
                 let value = match original_rule_idx {
                     #(#reduction_arms)*
                     _ => return Ok(()),
@@ -1084,6 +1087,7 @@ fn generate_reduction_arms(
         arms.push(quote! {
             #idx_lit => {
                 #(#stmts)*
+                actions.set_token_range(start_idx, self.parser.token_count());
                 #result
             }
         });
