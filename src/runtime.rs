@@ -1212,17 +1212,19 @@ impl<'a> Parser<'a> {
 
         // Single Dijkstra search from error point through rest of buffer.
         // Uses SimState with Rc linked-list stack for O(1) cloning.
-        // Priority: (cost, tokens_remaining) — at equal cost, prefer further along.
+        // Priority: (cost, deletions, tokens_remaining). At equal edit cost,
+        // preserve more of the user's input before preferring a path that has
+        // merely advanced further by deleting tokens.
         let buf_len = buffer.len();
-        let mut pq: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
+        let mut pq: BinaryHeap<Reverse<(usize, usize, usize, usize)>> = BinaryHeap::new();
         // States: (sim, buf_pos, parent_info)
         let mut states: Vec<RecoveryState<'a>> = Vec::new();
         let mut visited: BTreeSet<(Vec<(usize, u16)>, usize)> = BTreeSet::new();
 
         states.push((SimState::from_parser(self), start, None));
-        pq.push(Reverse((0, buf_len - start, 0)));
+        pq.push(Reverse((0, 0, buf_len - start, 0)));
 
-        while let Some(Reverse((cost, _, state_idx))) = pq.pop() {
+        while let Some(Reverse((cost, deletions, _, state_idx))) = pq.pop() {
             if states.len() > 5000 {
                 break;
             }
@@ -1256,7 +1258,7 @@ impl<'a> Parser<'a> {
             {
                 let idx = states.len();
                 states.push((sim2, pos + 1, Some((state_idx, Repair::Shift))));
-                pq.push(Reverse((cost, remaining - 1, idx)));
+                pq.push(Reverse((cost, deletions, remaining - 1, idx)));
             }
 
             // Insert any terminal (cost +1)
@@ -1266,7 +1268,7 @@ impl<'a> Parser<'a> {
                 if let Some(sim2) = sim.try_shift(token) {
                     let idx = states.len();
                     states.push((sim2, pos, Some((state_idx, Repair::Insert(SymbolId(t))))));
-                    pq.push(Reverse((cost + 1, remaining, idx)));
+                    pq.push(Reverse((cost + 1, deletions, remaining, idx)));
                 }
             }
 
@@ -1278,7 +1280,7 @@ impl<'a> Parser<'a> {
                     pos + 1,
                     Some((state_idx, Repair::Delete(buffer[pos].terminal))),
                 ));
-                pq.push(Reverse((cost + 1, remaining - 1, idx)));
+                pq.push(Reverse((cost + 1, deletions + 1, remaining - 1, idx)));
             }
         }
 
