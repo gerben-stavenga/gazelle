@@ -115,6 +115,35 @@ impl gazelle::Action<calc::Expr<Self>> for Evaluator {
 
 Action methods return `Result` — when actions are infallible, use `type Error = core::convert::Infallible`.
 
+### Parser ownership and diagnostics
+
+Generated parsers consume themselves when a token is pushed. Success returns
+the still-semantic parser; failure returns a `ParseError` that owns a
+syntax-only `RecoveryParser`:
+
+```rust
+parser = match parser.push(token, &mut actions) {
+    Ok(parser) => parser,
+    Err(error) => {
+        if let Some(diagnostic) = calc::diagnose_error(&error) {
+            // Grammar data: SymbolIds, token ranges, and LR rule/dot contexts.
+            report(diagnostic);
+        }
+
+        // Optional default English rendering.
+        let message = calc::format_error(&error, None, None);
+
+        // Semantic values are gone; only syntactic repair may continue.
+        let mut recovery = error.into_recovery();
+        let repairs = recovery.recover(&remaining_tokens);
+        return handle_error(message, repairs);
+    }
+};
+```
+
+The structured diagnosis is the primary interface. Applications can translate
+it, serialize it, or adapt it to an IDE; `format_error` is only a convenience.
+
 This gives you:
 - Full IDE support in action code (autocomplete, type hints, go-to-definition)
 - Compile errors point to your code, not generated code

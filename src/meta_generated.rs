@@ -1096,6 +1096,23 @@ pub fn diagnose_error<E>(
         gazelle::ParseError::Action { .. } => None,
     }
 }
+/// Format a syntax error using Gazelle's default English presentation.
+/// Returns `None` for user action errors.
+pub fn format_error<E>(
+    error: &gazelle::ParseError<E, gazelle::RecoveryParser<'static>>,
+    display_names: Option<&[(&str, &str)]>,
+    tokens: Option<&[&str]>,
+) -> Option<String> {
+    match error {
+        gazelle::ParseError::Syntax { terminal, recovery } => {
+            Some(
+                recovery
+                    .format_error(*terminal, &__table::ERROR_INFO, display_names, tokens),
+            )
+        }
+        gazelle::ParseError::Action { .. } => None,
+    }
+}
 /// Type-safe LR parser.
 pub struct Parser<A: Types> {
     parser: gazelle::Parser<'static>,

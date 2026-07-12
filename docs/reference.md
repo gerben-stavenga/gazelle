@@ -171,7 +171,7 @@ Terminals are tokens from your lexer. Declare them in the `terminals` block:
 
 ```
 terminals {
-    // Simple terminal (no payload, becomes () in generated code)
+    // Simple terminal (a unit variant in the generated Terminal enum)
     LPAREN,
     RPAREN,
 
@@ -201,7 +201,9 @@ terminals {
 | `reduce` | Always reduce | Rare; when shorter parse is preferred |
 | `conflict` | Caller supplies `Resolution` per token | Mixed strategies at runtime |
 
-Modifiers work by preventing S/R conflicts from appearing in the parser tables entirely. The table construction phase emits the correct action (shift, reduce, or shift-or-reduce) based on the modifier, so no runtime overhead for `shift`/`reduce` — the decision is baked into the table.
+Modifiers resolve the corresponding S/R conflicts during table construction.
+`shift` and `reduce` bake in a fixed action; `prec` and `conflict` emit a
+shift-or-reduce entry that the token resolves at runtime.
 
 **Terminal naming convention:** Terminals should be UPPERCASE to distinguish from non-terminals.
 
@@ -343,11 +345,10 @@ The macro generates a module (snake_case of grammar name, e.g., `calc`) containi
 `Types` declares associated types and the error type:
 
 ```rust
-pub trait Types: Sized {
-    type Error: From<ParseError>;
-    type Num: Debug;
-    type Op: Debug;
-    type Expr: Debug;
+pub trait Types: ErrorType + Sized {
+    type Num;
+    type Op;
+    type Expr;
     fn set_token_range(&mut self, start: usize, end: usize) {}
 }
 ```
@@ -393,13 +394,21 @@ impl<A: Types + Action<Expr<A>>> Parser<A> {
     pub fn push(self, terminal: Terminal<A>, actions: &mut A) -> Result<Self, ParseError<A::Error, RecoveryParser<'static>>>;
     pub fn finish(self, actions: &mut A) -> Result<A::Expr, ParseError<A::Error, RecoveryParser<'static>>>;
     pub fn state(&self) -> usize;
-    pub fn format_error(&self, err: &ParseError) -> String;
     pub fn into_recovery(self) -> gazelle::RecoveryParser<'static>;
     pub fn recover(
         self,
         buffer: &[gazelle::Token],
     ) -> (gazelle::RecoveryParser<'static>, Vec<gazelle::RecoveryInfo>);
 }
+
+pub fn diagnose_error<E>(error: &ParseError<E, RecoveryParser<'static>>)
+    -> Option<SyntaxDiagnostic>;
+pub fn format_error<E>(
+    error: &ParseError<E, RecoveryParser<'static>>,
+    display_names: Option<&[(&str, &str)]>,
+    tokens: Option<&[&str]>,
+) -> Option<String>;
+pub fn symbol_name(id: SymbolId) -> &'static str;
 ```
 
 Both methods consume the semantic parser. On success, `push` returns it for the
@@ -459,36 +468,43 @@ fn parse(input: &str) -> Result<f64, String> {
             Token::RParen => calc::Terminal::Rparen,
         };
 
-        parser.push(terminal, &mut actions)
-            .map_err(|e| parser.format_error(&e))?;
+        parser = parser.push(terminal, &mut actions).map_err(|error| {
+            calc::format_error(&error, None, None)
+                .unwrap_or_else(|| "semantic action failed".to_string())
+        })?;
     }
 
     parser.finish(&mut actions)
-        .map_err(|(p, e)| p.format_error(&e))
+        .map_err(|error| calc::format_error(&error, None, None)
+            .unwrap_or_else(|| "semantic action failed".to_string()))
 }
 ```
 
 ### Step 3: Handle Errors
 
 ```rust
-// Push errors - parser is still available for format_error
+// Push consumes the semantic parser.
 match parser.push(terminal, &mut actions) {
-    Ok(()) => { /* continue */ }
-    Err(e) => {
-        let msg = parser.format_error(&e);
-        // msg contains: "unexpected 'X', expected: A, B, C"
-        //               "  after: tokens parsed so far"
-        //               "  in rule: context"
-        return Err(msg);
+    Ok(next_parser) => parser = next_parser,
+    Err(error) => {
+        if let Some(diagnostic) = calc::diagnose_error(&error) {
+            // Inspect unexpected/expected symbols, stack spans, and LR items.
+            inspect(diagnostic);
+        }
+        let message = calc::format_error(&error, None, None);
+        let mut recovery = error.into_recovery();
+        let repairs = recovery.recover(&remaining_tokens);
+        return Err(message.unwrap_or_else(|| "semantic action failed".into()));
     }
 }
 
-// Finish errors - parser returned in the error tuple
+// finish follows the same ownership rule.
 match parser.finish(&mut actions) {
     Ok(result) => { /* use result */ }
-    Err((parser, e)) => {
-        let msg = parser.format_error(&e);
-        return Err(msg);
+    Err(error) => {
+        let message = calc::format_error(&error, None, None);
+        let recovery = error.into_recovery();
+        return Err(message.unwrap_or_else(|| "semantic action failed".into()));
     }
 }
 ```
@@ -575,7 +591,7 @@ impl Action<c11::DeclTypedef<Self>> for CActions {
 loop {
     // Lexer sees current typedef set
     let token = lexer.next(&actions.typedefs)?;
-    parser.push(token, &mut actions)?;
+    parser = parser.push(token, &mut actions)?;
 }
 ```
 
@@ -608,7 +624,7 @@ impl Action<calc::Expr<Self>> for Printer {
 For dynamic grammars, use the library API directly:
 
 ```rust
-use gazelle::{parse_grammar, GrammarBuilder};
+use gazelle::parse_grammar;
 use gazelle::table::CompiledTable;
 use gazelle::runtime::{CstParser, Token};
 
@@ -618,15 +634,6 @@ let grammar = parse_grammar(r#"
     terminals { NUM, PLUS }
     expr = expr PLUS expr => add | NUM => num;
 "#)?;
-
-// Or build programmatically
-let mut gb = GrammarBuilder::new();
-let num = gb.t("NUM");
-let plus = gb.t("PLUS");
-let expr = gb.nt("expr");
-gb.rule(expr, vec![expr, plus, expr]);
-gb.rule(expr, vec![num]);
-let grammar = gb.build();
 
 // Compile and parse
 let compiled = CompiledTable::build(&grammar).unwrap();
@@ -639,12 +646,20 @@ parser.push(Token::new(num_id))?;     // NUM
 parser.push(Token::new(plus_id))?;    // PLUS
 parser.push(Token::new(num_id))?;     // NUM
 
-let tree = parser.finish().map_err(|(p, e)| p.format_error(&e, &compiled))?;
+let tree = parser.finish().map_err(|(p, e)| {
+    let gazelle::ParseError::Syntax { terminal, .. } = e;
+    p.format_error(terminal, &compiled, None, None)
+})?;
 // tree is a Cst: Leaf nodes carry SymbolId + token index,
 // Node carry rule index + children
 ```
 
-`CstParser` mirrors the generated parser's `push`/`finish` pattern. `Cst::Leaf` includes a token index so you can map back to your own token data (values, source positions, etc.).
+For programmatic construction, instantiate the public `Grammar`,
+`TerminalDef`, `Rule`, `Alt`, and `Term` data types directly.
+
+`CstParser` has a mutable low-level `push` API because it owns no user semantic
+values or action side effects. `Cst::Leaf` includes a token index so you can map
+back to your own token data (values, source positions, etc.).
 
 For building a custom AST instead of a CST, use `Parser` directly with `maybe_reduce`/`shift`:
 
@@ -676,7 +691,7 @@ loop {
 
 ### Parse errors
 
-When `push` or `finish` returns an error, `format_error` produces a message showing what went wrong, what was expected, and where in the grammar the parser was:
+When `push` or `finish` returns an error, the generated grammar can produce a structured diagnosis with `diagnose_error`. Its `format_error` helper is an optional default English rendering:
 
 ```
 unexpected 'STAR', expected: NUM, LPAREN
@@ -686,24 +701,25 @@ unexpected 'STAR', expected: NUM, LPAREN
 
 The `•` marks the parser's position in the rule — it had seen `expr OP` and expected the right-hand operand.
 
-Errors from `push` leave the parser intact so you can still call `format_error`:
+Both operations consume the semantic parser. Success returns the parser; failure returns a `ParseError` that owns syntax-only recovery state:
 
 ```rust
-parser.push(terminal, &mut actions).map_err(|e| parser.format_error(&e))?;
+parser = parser.push(terminal, &mut actions).map_err(|error| {
+    calc::format_error(&error, None, None)
+        .unwrap_or_else(|| "semantic action failed".to_string())
+})?;
 ```
 
-Errors from `finish` return the parser in the error tuple for the same reason:
-
-```rust
-parser.finish(&mut actions).map_err(|(p, e)| p.format_error(&e))?;
-```
-
-For nicer output, `format_error_with` lets you provide display names (mapping internal symbol names to user-facing ones) and the actual token texts for the "after:" context line:
+The optional arguments provide display names and actual token texts for the default formatter:
 
 ```rust
 let display_names = HashMap::from([("PLUS", "+"), ("STAR", "*"), ("LPAREN", "(")]);
 let token_texts = vec!["1", "+", "*"];  // the tokens parsed so far
-let msg = parser.format_error_with(&e, &display_names, &token_texts);
+let msg = calc::format_error(
+    &error,
+    Some(&display_names),
+    Some(&token_texts),
+).unwrap();
 // unexpected '*', expected: NUM, (
 //   after: 1 +
 //   in expr: expr OP • expr
@@ -715,7 +731,10 @@ Generated parsers make the semantic boundary explicit. A syntax error discards
 their semantic value stack, so the error owns a syntax-only `RecoveryParser`:
 
 ```rust
-let error = parser.push(terminal, &mut actions).unwrap_err();
+let error = match parser.push(terminal, &mut actions) {
+    Ok(_) => unreachable!("the token was expected to fail"),
+    Err(error) => error,
+};
 let mut recovery = error.into_recovery();
 let errors = recovery.recover(&remaining_tokens);
 let later_errors = recovery.recover(&later_tokens);

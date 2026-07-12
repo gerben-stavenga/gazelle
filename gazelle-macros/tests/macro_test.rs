@@ -41,8 +41,7 @@ fn test_simple_grammar_types() {
     parser = parser.push(simple::Terminal::A, &mut actions).unwrap();
 
     // Finish and get result
-    let result = parser.finish(&mut actions).unwrap();
-    assert_eq!(result, ());
+    parser.finish(&mut actions).unwrap();
 }
 
 #[test]
@@ -64,6 +63,11 @@ fn generated_recovery_consumes_semantic_parser() {
     assert_eq!(diagnostic.position, 1);
     assert_eq!(diagnostic.expected, vec![gazelle::SymbolId::EOF]);
     assert_eq!(simple::symbol_name(diagnostic.unexpected), "A");
+    assert!(
+        simple::format_error(&error, None, None)
+            .unwrap()
+            .contains("unexpected 'A'")
+    );
     assert!(!diagnostic.stack.is_empty());
     assert!(!diagnostic.contexts.is_empty());
 
@@ -530,4 +534,162 @@ fn test_custom_fold() {
     let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 60);
     assert!(actions.steps >= 4); // zero + 3 adds, all through &mut self
+}
+
+// Exercise the generated ManuallyDrop union at each ownership boundary. These
+// tests detect selecting the wrong union member, leaking a shifted payload, or
+// draining one twice.
+gazelle! {
+    grammar drop_union {
+        start pair;
+        terminals {
+            ITEM: _
+        }
+
+        pair = ITEM ITEM => pair;
+    }
+}
+
+#[derive(Debug)]
+struct Tracked {
+    id: usize,
+    drops: std::rc::Rc<Vec<std::cell::Cell<usize>>>,
+}
+
+impl Tracked {
+    fn new(id: usize, drops: &std::rc::Rc<Vec<std::cell::Cell<usize>>>) -> Self {
+        Self {
+            id,
+            drops: drops.clone(),
+        }
+    }
+}
+
+impl Drop for Tracked {
+    fn drop(&mut self) {
+        let count = self.drops[self.id].get();
+        self.drops[self.id].set(count + 1);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ReductionFailed;
+
+struct DropActions {
+    fail: bool,
+}
+
+impl gazelle::ErrorType for DropActions {
+    type Error = ReductionFailed;
+}
+
+impl drop_union::Types for DropActions {
+    type Item = Tracked;
+    type Pair = Vec<Tracked>;
+}
+
+impl Action<drop_union::Pair<Self>> for DropActions {
+    fn build(&mut self, node: drop_union::Pair<Self>) -> Result<Vec<Tracked>, Self::Error> {
+        let drop_union::Pair::Pair(left, right) = node;
+        if self.fail {
+            Err(ReductionFailed)
+        } else {
+            Ok(vec![left, right])
+        }
+    }
+}
+
+fn drop_counts(len: usize) -> std::rc::Rc<Vec<std::cell::Cell<usize>>> {
+    std::rc::Rc::new((0..len).map(|_| std::cell::Cell::new(0)).collect())
+}
+
+fn observed_drops(drops: &std::rc::Rc<Vec<std::cell::Cell<usize>>>) -> Vec<usize> {
+    drops.iter().map(std::cell::Cell::get).collect()
+}
+
+#[test]
+fn semantic_union_drops_successful_result_once() {
+    let drops = drop_counts(2);
+    let mut actions = DropActions { fail: false };
+    let parser = drop_union::Parser::<DropActions>::new();
+    let parser = parser
+        .push(
+            drop_union::Terminal::Item(Tracked::new(0, &drops)),
+            &mut actions,
+        )
+        .unwrap();
+    let parser = parser
+        .push(
+            drop_union::Terminal::Item(Tracked::new(1, &drops)),
+            &mut actions,
+        )
+        .unwrap();
+
+    let result = parser.finish(&mut actions).unwrap();
+    assert_eq!(observed_drops(&drops), [0, 0]);
+    drop(result);
+    assert_eq!(observed_drops(&drops), [1, 1]);
+}
+
+#[test]
+fn semantic_union_drops_stack_and_rejected_terminal_on_syntax_error() {
+    let drops = drop_counts(3);
+    let mut actions = DropActions { fail: false };
+    let parser = drop_union::Parser::<DropActions>::new();
+    let parser = parser
+        .push(
+            drop_union::Terminal::Item(Tracked::new(0, &drops)),
+            &mut actions,
+        )
+        .unwrap();
+    let parser = parser
+        .push(
+            drop_union::Terminal::Item(Tracked::new(1, &drops)),
+            &mut actions,
+        )
+        .unwrap();
+
+    let error = match parser.push(
+        drop_union::Terminal::Item(Tracked::new(2, &drops)),
+        &mut actions,
+    ) {
+        Ok(_) => panic!("third item was unexpectedly accepted"),
+        Err(error) => error,
+    };
+
+    assert!(matches!(&error, gazelle::ParseError::Syntax { .. }));
+    assert_eq!(observed_drops(&drops), [1, 1, 1]);
+    drop(error);
+    assert_eq!(observed_drops(&drops), [1, 1, 1]);
+}
+
+#[test]
+fn semantic_union_drops_reduction_inputs_once_on_action_error() {
+    let drops = drop_counts(2);
+    let mut actions = DropActions { fail: true };
+    let parser = drop_union::Parser::<DropActions>::new();
+    let parser = parser
+        .push(
+            drop_union::Terminal::Item(Tracked::new(0, &drops)),
+            &mut actions,
+        )
+        .unwrap();
+    let parser = parser
+        .push(
+            drop_union::Terminal::Item(Tracked::new(1, &drops)),
+            &mut actions,
+        )
+        .unwrap();
+
+    let error = parser.finish(&mut actions).unwrap_err();
+    assert!(matches!(
+        &error,
+        gazelle::ParseError::Action {
+            error: ReductionFailed,
+            ..
+        }
+    ));
+    assert_eq!(observed_drops(&drops), [1, 1]);
+    drop(error);
+    assert_eq!(observed_drops(&drops), [1, 1]);
 }
