@@ -39,20 +39,36 @@ pub(crate) fn detect_conflicts(
             continue;
         }
         for &(sym, target) in &dfa.transitions[source] {
-            if sym >= num_terminals || nfa_info.reduce_to_real.contains_key(&sym) {
+            let virtual_terminal = nfa_info.reduce_to_real.get(&sym).copied();
+            let terminal = if sym < num_terminals {
+                sym
+            } else if let Some(real) = virtual_terminal {
+                real
+            } else {
                 continue;
-            }
-            if lr.has_items(target) && !lr.reduce_rules[target].is_empty() {
+            };
+
+            // A virtual terminal represents only the reduce side of a modified
+            // terminal's S/R conflict. Its real-terminal transition represents
+            // the shift side, so the split is intentional and not itself a
+            // reportable conflict.
+            if virtual_terminal.is_none()
+                && lr.has_items(target)
+                && !lr.reduce_rules[target].is_empty()
+            {
                 for &rule in &lr.reduce_rules[target] {
-                    conflicts.push((source, SymbolId(sym), ConflictKind::ShiftReduce(rule)));
+                    conflicts.push((source, SymbolId(terminal), ConflictKind::ShiftReduce(rule)));
                 }
             }
+
+            // Multiple reductions on a virtual terminal are still a genuine
+            // R/R ambiguity. Report it against the corresponding real terminal.
             if lr.reduce_rules[target].len() > 1 {
                 let rules = &lr.reduce_rules[target];
                 for i in 1..rules.len() {
                     conflicts.push((
                         source,
-                        SymbolId(sym),
+                        SymbolId(terminal),
                         ConflictKind::ReduceReduce(rules[0], rules[i]),
                     ));
                 }
