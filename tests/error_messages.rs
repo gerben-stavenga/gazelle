@@ -26,7 +26,7 @@ fn error_unexpected_token_simple() {
     let err = parser.maybe_reduce(Some(token)).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -56,7 +56,7 @@ fn error_unexpected_eof() {
     let err = parser.maybe_reduce(None).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -89,7 +89,7 @@ fn error_multiple_expected() {
     let err = parser.maybe_reduce(Some(token)).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -120,7 +120,7 @@ fn error_deduplicates_display_names() {
 
     let bad = Token::new(compiled.symbol_id("bad").unwrap());
     let err = parser.maybe_reduce(Some(bad)).unwrap_err();
-    let gazelle::ParseError::Syntax { terminal } = err;
+    let gazelle::ParseError::Syntax { terminal, .. } = err;
     let msg = parser.format_error(
         terminal,
         &compiled,
@@ -163,7 +163,7 @@ fn error_in_sequence() {
     let err = parser.maybe_reduce(Some(token_x)).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -214,7 +214,7 @@ fn error_in_expression() {
     let err = parser.maybe_reduce(Some(token_star)).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -253,7 +253,7 @@ fn error_unexpected_eof_after_partial() {
     let err = parser.maybe_reduce(None).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -300,7 +300,7 @@ fn error_expects_eof() {
     let err = parser.maybe_reduce(Some(tok_x)).unwrap_err();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -372,7 +372,7 @@ fn error_checkpoint_restores_pre_reduction_stack() {
     parser.restore_checkpoint();
     let msg = parser.format_error(
         {
-            let gazelle::ParseError::Syntax { terminal } = err;
+            let gazelle::ParseError::Syntax { terminal, .. } = err;
             terminal
         },
         &compiled,
@@ -431,7 +431,7 @@ fn error_no_spurious_lalr_lookahead() {
             Ok(None) => {
                 break;
             }
-            Err(gazelle::ParseError::Syntax { terminal }) => {
+            Err(gazelle::ParseError::Syntax { terminal, .. }) => {
                 let msg = parser.format_error(terminal, &compiled, None, None);
                 // Should only expect RPAREN, not RBRACKET
                 assert!(

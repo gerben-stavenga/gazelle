@@ -247,6 +247,12 @@ fn do_bootstrap_meta() {
                 pattern: None,
             },
             g::TerminalDef {
+                name: "KW_AS".into(),
+                has_type: false,
+                kind: g::TerminalKind::Plain,
+                pattern: None,
+            },
+            g::TerminalDef {
                 name: "UNDERSCORE".into(),
                 has_type: false,
                 kind: g::TerminalKind::Plain,
@@ -463,6 +469,18 @@ fn do_bootstrap_meta() {
                     },
                     g::Alt {
                         terms: vec![
+                            g::Term::Symbol("LPAREN".into()),
+                            g::Term::Symbol("IDENT".into()),
+                            g::Term::Symbol("PERCENT".into()),
+                            g::Term::Symbol("IDENT".into()),
+                            g::Term::Symbol("RPAREN".into()),
+                            g::Term::Symbol("KW_AS".into()),
+                            g::Term::Symbol("IDENT".into()),
+                        ],
+                        name: "sym_sep_as".into(),
+                    },
+                    g::Alt {
+                        terms: vec![
                             g::Term::Symbol("IDENT".into()),
                             g::Term::Symbol("QUESTION".into()),
                         ],
@@ -478,9 +496,27 @@ fn do_bootstrap_meta() {
                     g::Alt {
                         terms: vec![
                             g::Term::Symbol("IDENT".into()),
+                            g::Term::Symbol("STAR".into()),
+                            g::Term::Symbol("KW_AS".into()),
+                            g::Term::Symbol("IDENT".into()),
+                        ],
+                        name: "sym_star_as".into(),
+                    },
+                    g::Alt {
+                        terms: vec![
+                            g::Term::Symbol("IDENT".into()),
                             g::Term::Symbol("PLUS".into()),
                         ],
                         name: "sym_plus".into(),
+                    },
+                    g::Alt {
+                        terms: vec![
+                            g::Term::Symbol("IDENT".into()),
+                            g::Term::Symbol("PLUS".into()),
+                            g::Term::Symbol("KW_AS".into()),
+                            g::Term::Symbol("IDENT".into()),
+                        ],
+                        name: "sym_plus_as".into(),
                     },
                     g::Alt {
                         terms: vec![g::Term::Symbol("IDENT".into())],

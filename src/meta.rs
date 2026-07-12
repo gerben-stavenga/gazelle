@@ -382,14 +382,26 @@ where
     let mut actions = AstBuilder;
 
     for tok in tokens {
-        if let Err(crate::ParseError::Syntax { terminal }) = parser.push(tok, &mut actions) {
-            return Err(parser.format_error(terminal, None, None));
-        }
+        parser = match parser.push(tok, &mut actions) {
+            Ok(parser) => parser,
+            Err(crate::ParseError::Syntax { terminal, recovery }) => {
+                return Err(recovery.format_error(
+                    terminal,
+                    Parser::<AstBuilder>::error_info(),
+                    None,
+                    None,
+                ));
+            }
+            Err(crate::ParseError::Action { error, .. }) => match error {},
+        };
     }
 
-    parser
-        .finish(&mut actions)
-        .map_err(|(p, crate::ParseError::Syntax { terminal })| p.format_error(terminal, None, None))
+    parser.finish(&mut actions).map_err(|error| match error {
+        crate::ParseError::Syntax { terminal, recovery } => {
+            recovery.format_error(terminal, Parser::<AstBuilder>::error_info(), None, None)
+        }
+        crate::ParseError::Action { error, .. } => match error {},
+    })
 }
 
 /// Parse a grammar string into a Grammar AST.
@@ -413,20 +425,33 @@ pub fn parse_grammar_diagnostic(input: &str) -> Result<grammar::Grammar, Grammar
     let token_texts: Vec<&str> = token_texts_owned.iter().map(String::as_str).collect();
 
     for token in tokens {
-        if let Err(crate::ParseError::Syntax { terminal }) =
-            parser.push(token.terminal, &mut actions)
-        {
-            let message = parser.format_error(terminal, None, Some(&token_texts));
-            return Err(GrammarDiagnostic::new(input, token.span, message));
-        }
+        parser = match parser.push(token.terminal, &mut actions) {
+            Ok(parser) => parser,
+            Err(crate::ParseError::Syntax { terminal, recovery }) => {
+                let message = recovery.format_error(
+                    terminal,
+                    Parser::<AstBuilder>::error_info(),
+                    None,
+                    Some(&token_texts),
+                );
+                return Err(GrammarDiagnostic::new(input, token.span, message));
+            }
+            Err(crate::ParseError::Action { error, .. }) => match error {},
+        };
     }
 
-    parser
-        .finish(&mut actions)
-        .map_err(|(parser, crate::ParseError::Syntax { terminal })| {
-            let message = parser.format_error(terminal, None, Some(&token_texts));
+    parser.finish(&mut actions).map_err(|error| match error {
+        crate::ParseError::Syntax { terminal, recovery } => {
+            let message = recovery.format_error(
+                terminal,
+                Parser::<AstBuilder>::error_info(),
+                None,
+                Some(&token_texts),
+            );
             GrammarDiagnostic::new(input, input.len()..input.len(), message)
-        })
+        }
+        crate::ParseError::Action { error, .. } => match error {},
+    })
 }
 
 #[cfg(test)]

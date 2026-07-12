@@ -38,11 +38,40 @@ fn test_simple_grammar_types() {
     let mut actions = SimpleActionsImpl;
 
     // Push the terminal - this handles reduction internally
-    parser.push(simple::Terminal::A, &mut actions).unwrap();
+    parser = parser.push(simple::Terminal::A, &mut actions).unwrap();
 
     // Finish and get result
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, ());
+}
+
+#[test]
+fn generated_recovery_consumes_semantic_parser() {
+    let mut parser = simple::Parser::<SimpleActionsImpl>::new();
+    let mut actions = SimpleActionsImpl;
+
+    parser = parser.push(simple::Terminal::A, &mut actions).unwrap();
+    let error = match parser.push(simple::Terminal::A, &mut actions) {
+        Ok(_) => panic!("unexpected token was accepted"),
+        Err(error) => error,
+    };
+
+    let diagnostic = simple::diagnose_error(&error).unwrap();
+    assert_eq!(
+        diagnostic.unexpected,
+        simple::Terminal::<SimpleActionsImpl>::A.symbol_id()
+    );
+    assert_eq!(diagnostic.position, 1);
+    assert_eq!(diagnostic.expected, vec![gazelle::SymbolId::EOF]);
+    assert_eq!(simple::symbol_name(diagnostic.unexpected), "A");
+    assert!(!diagnostic.stack.is_empty());
+    assert!(!diagnostic.contexts.is_empty());
+
+    let unexpected = gazelle::Token::new(simple::Terminal::<SimpleActionsImpl>::A.symbol_id());
+    let mut recovery = error.into_recovery();
+    let errors = recovery.recover(&[unexpected]);
+    assert!(!errors.is_empty());
+    assert!(recovery.recover(&[]).is_empty());
 }
 
 // Test a grammar with payload types
@@ -81,12 +110,12 @@ fn test_payload_grammar() {
     let mut actions = NumActionsImpl;
 
     // Push the terminal
-    parser
+    parser = parser
         .push(num_parser::Terminal::Num(42), &mut actions)
         .unwrap();
 
     // Finish and get result
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 42);
 }
 
@@ -140,11 +169,11 @@ fn test_expr_grammar() {
     let mut actions = ExprActionsImpl;
 
     // Parse: 1 + 2
-    parser.push(expr::Terminal::Num(1), &mut actions).unwrap();
-    parser.push(expr::Terminal::Plus, &mut actions).unwrap();
-    parser.push(expr::Terminal::Num(2), &mut actions).unwrap();
+    parser = parser.push(expr::Terminal::Num(1), &mut actions).unwrap();
+    parser = parser.push(expr::Terminal::Plus, &mut actions).unwrap();
+    parser = parser.push(expr::Terminal::Num(2), &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 3);
 }
 
@@ -189,11 +218,11 @@ fn test_set_token_range() {
     let mut actions = SpanTracker { spans: Vec::new() };
 
     // Parse: 1 + 2   (tokens at indices 0, 1, 2)
-    parser.push(expr::Terminal::Num(1), &mut actions).unwrap();
-    parser.push(expr::Terminal::Plus, &mut actions).unwrap();
-    parser.push(expr::Terminal::Num(2), &mut actions).unwrap();
+    parser = parser.push(expr::Terminal::Num(1), &mut actions).unwrap();
+    parser = parser.push(expr::Terminal::Plus, &mut actions).unwrap();
+    parser = parser.push(expr::Terminal::Num(2), &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 3);
 
     // Reductions: term(0,1), expr(0,1), term(2,3), expr(0,3)
@@ -249,10 +278,10 @@ impl Action<csv_list::Items<Self>> for CsvActionsImpl {
 fn test_separator_single() {
     let mut parser = csv_list::Parser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser
+    parser = parser
         .push(csv_list::Terminal::Num(42), &mut actions)
         .unwrap();
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, vec![42]);
 }
 
@@ -260,22 +289,22 @@ fn test_separator_single() {
 fn test_separator_multiple() {
     let mut parser = csv_list::Parser::<CsvActionsImpl>::new();
     let mut actions = CsvActionsImpl;
-    parser
+    parser = parser
         .push(csv_list::Terminal::Num(1), &mut actions)
         .unwrap();
-    parser
+    parser = parser
         .push(csv_list::Terminal::Comma, &mut actions)
         .unwrap();
-    parser
+    parser = parser
         .push(csv_list::Terminal::Num(2), &mut actions)
         .unwrap();
-    parser
+    parser = parser
         .push(csv_list::Terminal::Comma, &mut actions)
         .unwrap();
-    parser
+    parser = parser
         .push(csv_list::Terminal::Num(3), &mut actions)
         .unwrap();
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, vec![1, 2, 3]);
 }
 
@@ -320,11 +349,11 @@ fn test_passthrough() {
     let mut actions = ParenActionsImpl;
 
     // Parse: (42)
-    parser.push(paren::Terminal::Lparen, &mut actions).unwrap();
-    parser.push(paren::Terminal::Num(42), &mut actions).unwrap();
-    parser.push(paren::Terminal::Rparen, &mut actions).unwrap();
+    parser = parser.push(paren::Terminal::Lparen, &mut actions).unwrap();
+    parser = parser.push(paren::Terminal::Num(42), &mut actions).unwrap();
+    parser = parser.push(paren::Terminal::Rparen, &mut actions).unwrap();
 
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 42);
 }
 
@@ -367,17 +396,17 @@ fn test_file_include() {
     let mut actions = FileExprActionsImpl;
 
     // Parse: 1 + 2
-    parser
+    parser = parser
         .push(file_expr::Terminal::Num(1), &mut actions)
         .unwrap();
-    parser
+    parser = parser
         .push(file_expr::Terminal::Plus, &mut actions)
         .unwrap();
-    parser
+    parser = parser
         .push(file_expr::Terminal::Num(2), &mut actions)
         .unwrap();
 
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 3);
 }
 
@@ -445,10 +474,10 @@ fn test_named_sequence_custom_fold() {
     let mut parser = nums::Parser::<NumsActions>::new();
     let mut actions = NumsActions { folds: 0 };
     for n in [10, 20, 30] {
-        parser.push(nums::Terminal::Num(n), &mut actions).unwrap();
-        parser.push(nums::Terminal::Semi, &mut actions).unwrap();
+        parser = parser.push(nums::Terminal::Num(n), &mut actions).unwrap();
+        parser = parser.push(nums::Terminal::Semi, &mut actions).unwrap();
     }
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 60); // folded straight into a sum on the `*`, never a Vec
     assert!(actions.folds >= 4); // Empty + 3 Appends, all through &mut self
 }
@@ -496,9 +525,9 @@ fn test_custom_fold() {
     let mut parser = fold::Parser::<FoldActions>::new();
     let mut actions = FoldActions { steps: 0 };
     for n in [10, 20, 30] {
-        parser.push(fold::Terminal::Num(n), &mut actions).unwrap();
+        parser = parser.push(fold::Terminal::Num(n), &mut actions).unwrap();
     }
-    let result = parser.finish(&mut actions).map_err(|(_, e)| e).unwrap();
+    let result = parser.finish(&mut actions).unwrap();
     assert_eq!(result, 60);
     assert!(actions.steps >= 4); // zero + 3 adds, all through &mut self
 }

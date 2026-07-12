@@ -98,15 +98,23 @@ mod tests {
         let mut actions = Builder;
 
         for tok in tokens {
-            parser
+            parser = parser
                 .push(tok, &mut actions)
                 .map_err(|e| format!("Parse error: {:?}", e))?;
         }
 
         parser
             .finish(&mut actions)
-            .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
-                format!("Finish error: {}", p.format_error(terminal, None, None))
+            .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
+                format!(
+                    "Finish error: {}",
+                    recovery.format_error(
+                        terminal,
+                        list::Parser::<Builder>::error_info(),
+                        None,
+                        None
+                    )
+                )
             })
     }
 

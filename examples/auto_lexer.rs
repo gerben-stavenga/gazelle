@@ -86,14 +86,12 @@ fn eval(input: &str) -> Result<i64, String> {
                 scanner.offset()
             ));
         };
-        parser
+        parser = parser
             .push(tok, &mut actions)
             .map_err(|e| format!("{:?}", e))?;
     }
 
-    parser
-        .finish(&mut actions)
-        .map_err(|(_, e)| format!("{:?}", e))
+    parser.finish(&mut actions).map_err(|e| format!("{:?}", e))
 }
 
 fn main() {

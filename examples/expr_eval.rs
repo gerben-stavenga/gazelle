@@ -131,17 +131,17 @@ fn eval(input: &str) -> Result<i64, String> {
                 }
             },
         };
-        parser
-            .push(tok, &mut actions)
-            .map_err(|gazelle::ParseError::Syntax { terminal }| {
-                parser.format_error(terminal, None, None)
-            })?;
+        parser = parser.push(tok, &mut actions).map_err(
+            |gazelle::ParseError::Syntax { terminal, recovery }| {
+                recovery.format_error(terminal, expr::Parser::<Eval>::error_info(), None, None)
+            },
+        )?;
     }
 
     parser
         .finish(&mut actions)
-        .map_err(|(p, gazelle::ParseError::Syntax { terminal })| {
-            p.format_error(terminal, None, None)
+        .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
+            recovery.format_error(terminal, expr::Parser::<Eval>::error_info(), None, None)
         })
 }
 

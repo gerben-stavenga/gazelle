@@ -1081,6 +1081,21 @@ union __Value<A: Types> {
     __unit: (),
     __phantom: core::mem::ManuallyDrop<core::marker::PhantomData<A>>,
 }
+/// Return the grammar name for a symbol ID.
+pub fn symbol_name(id: gazelle::SymbolId) -> &'static str {
+    __table::ERROR_INFO.symbol_names.get(id.index()).copied().unwrap_or("<?>")
+}
+/// Extract a structured, grammar-level syntax diagnosis.
+pub fn diagnose_error<E>(
+    error: &gazelle::ParseError<E, gazelle::RecoveryParser<'static>>,
+) -> Option<gazelle::SyntaxDiagnostic> {
+    match error {
+        gazelle::ParseError::Syntax { terminal, recovery } => {
+            Some(recovery.diagnose(*terminal, &__table::ERROR_INFO))
+        }
+        gazelle::ParseError::Action { .. } => None,
+    }
+}
 /// Type-safe LR parser.
 pub struct Parser<A: Types> {
     parser: gazelle::Parser<'static>,
@@ -1111,9 +1126,26 @@ impl<A: Types> Parser<A> {
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
         &__table::ERROR_INFO
     }
-    /// Recover from a parse error by searching for minimum-cost repairs.
-    pub fn recover(&mut self, buffer: &[gazelle::Token]) -> Vec<gazelle::RecoveryInfo> {
-        self.parser.recover(buffer)
+    /// Abandon semantic parsing and enter syntax-only recovery.
+    pub fn into_recovery(mut self) -> gazelle::RecoveryParser<'static> {
+        self.drain_values();
+        let parser = core::mem::replace(
+            &mut self.parser,
+            gazelle::Parser::new(__table::TABLE),
+        );
+        parser.into_recovery()
+    }
+    /// Consume this semantic parser and search for syntax repairs.
+    ///
+    /// The returned recovery parser has no semantic `push` or `finish`
+    /// methods, so a discarded semantic value stack cannot be reused.
+    pub fn recover(
+        self,
+        buffer: &[gazelle::Token],
+    ) -> (gazelle::RecoveryParser<'static>, Vec<gazelle::RecoveryInfo>) {
+        let mut recovery = self.into_recovery();
+        let errors = recovery.recover(buffer);
+        (recovery, errors)
     }
     fn drain_values(&mut self) {
         for i in (0..self.value_stack.len()).rev() {
@@ -1208,10 +1240,10 @@ impl<
 > Parser<A> {
     /// Push a terminal, performing any reductions.
     pub fn push(
-        &mut self,
+        mut self,
         terminal: Terminal<A>,
         actions: &mut A,
-    ) -> Result<(), gazelle::ParseError<A::Error>> {
+    ) -> Result<Self, gazelle::ParseError<A::Error, gazelle::RecoveryParser<'static>>> {
         let token = gazelle::Token {
             terminal: terminal.symbol_id(),
             resolution: terminal.resolution(),
@@ -1219,14 +1251,24 @@ impl<
         loop {
             match self.parser.maybe_reduce(Some(token)) {
                 Ok(Some((rule, _, start_idx))) => {
-                    self.do_reduce(rule, start_idx, actions)
-                        .map_err(gazelle::ParseError::Action)?;
+                    if let Err(e) = self.do_reduce(rule, start_idx, actions) {
+                        let recovery = self.into_recovery();
+                        return Err(gazelle::ParseError::Action {
+                            error: e,
+                            recovery,
+                        });
+                    }
                 }
                 Ok(None) => break,
                 Err(e) => {
                     self.drain_values();
                     self.parser.restore_checkpoint();
-                    return Err(e.cast());
+                    let gazelle::ParseError::Syntax { terminal, .. } = e;
+                    let recovery = self.into_recovery();
+                    return Err(gazelle::ParseError::Syntax {
+                        terminal,
+                        recovery,
+                    });
                 }
             }
         }
@@ -1315,13 +1357,16 @@ impl<
             }
             Terminal::__Phantom(_) => unreachable!(),
         }
-        Ok(())
+        Ok(self)
     }
     /// Finish parsing and return the result.
     pub fn finish(
         mut self,
         actions: &mut A,
-    ) -> Result<A::GrammarDef, (Self, gazelle::ParseError<A::Error>)> {
+    ) -> Result<
+        A::GrammarDef,
+        gazelle::ParseError<A::Error, gazelle::RecoveryParser<'static>>,
+    > {
         loop {
             match self.parser.maybe_reduce(None) {
                 Ok(Some((0, _, _))) => {
@@ -1332,14 +1377,23 @@ impl<
                 }
                 Ok(Some((rule, _, start_idx))) => {
                     if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                        return Err((self, gazelle::ParseError::Action(e)));
+                        let recovery = self.into_recovery();
+                        return Err(gazelle::ParseError::Action {
+                            error: e,
+                            recovery,
+                        });
                     }
                 }
                 Ok(None) => unreachable!(),
                 Err(e) => {
                     self.drain_values();
                     self.parser.restore_checkpoint();
-                    return Err((self, e.cast()));
+                    let gazelle::ParseError::Syntax { terminal, .. } = e;
+                    let recovery = self.into_recovery();
+                    return Err(gazelle::ParseError::Syntax {
+                        terminal,
+                        recovery,
+                    });
                 }
             }
         }

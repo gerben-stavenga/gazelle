@@ -80,7 +80,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
     let finish_method = if let Some(start_type) = start_type_annotation {
         let start_type_ident = format_ident!("{}", start_type);
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, (Self, #gazelle_crate_path::ParseError<A::Error>)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<A::#start_type_ident, #gazelle_crate_path::ParseError<A::Error, #gazelle_crate_path::RecoveryParser<'static>>> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
@@ -89,14 +89,17 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                         }
                         Ok(Some((rule, _, start_idx))) => {
                             if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                                return Err((self, #gazelle_crate_path::ParseError::Action(e)));
+                                let recovery = self.into_recovery();
+                                return Err(#gazelle_crate_path::ParseError::Action { error: e, recovery });
                             }
                         }
                         Ok(None) => unreachable!(),
                         Err(e) => {
                             self.drain_values();
                             self.parser.restore_checkpoint();
-                            return Err((self, e.cast()));
+                            let #gazelle_crate_path::ParseError::Syntax { terminal, .. } = e;
+                            let recovery = self.into_recovery();
+                            return Err(#gazelle_crate_path::ParseError::Syntax { terminal, recovery });
                         }
                     }
                 }
@@ -104,7 +107,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         }
     } else {
         quote! {
-            pub fn finish(mut self, actions: &mut A) -> Result<(), (Self, #gazelle_crate_path::ParseError<A::Error>)> {
+            pub fn finish(mut self, actions: &mut A) -> Result<(), #gazelle_crate_path::ParseError<A::Error, #gazelle_crate_path::RecoveryParser<'static>>> {
                 loop {
                     match self.parser.maybe_reduce(None) {
                         Ok(Some((0, _, _))) => {
@@ -113,14 +116,17 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                         }
                         Ok(Some((rule, _, start_idx))) => {
                             if let Err(e) = self.do_reduce(rule, start_idx, actions) {
-                                return Err((self, #gazelle_crate_path::ParseError::Action(e)));
+                                let recovery = self.into_recovery();
+                                return Err(#gazelle_crate_path::ParseError::Action { error: e, recovery });
                             }
                         }
                         Ok(None) => unreachable!(),
                         Err(e) => {
                             self.drain_values();
                             self.parser.restore_checkpoint();
-                            return Err((self, e.cast()));
+                            let #gazelle_crate_path::ParseError::Syntax { terminal, .. } = e;
+                            let recovery = self.into_recovery();
+                            return Err(#gazelle_crate_path::ParseError::Syntax { terminal, recovery });
                         }
                     }
                 }
@@ -171,6 +177,27 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
 
         #value_union_code
 
+        /// Return the grammar name for a symbol ID.
+        #vis fn symbol_name(id: #gazelle_crate_path::SymbolId) -> &'static str {
+            #table_mod::ERROR_INFO
+                .symbol_names
+                .get(id.index())
+                .copied()
+                .unwrap_or("<?>")
+        }
+
+        /// Extract a structured, grammar-level syntax diagnosis.
+        #vis fn diagnose_error<E>(
+            error: &#gazelle_crate_path::ParseError<E, #gazelle_crate_path::RecoveryParser<'static>>,
+        ) -> Option<#gazelle_crate_path::SyntaxDiagnostic> {
+            match error {
+                #gazelle_crate_path::ParseError::Syntax { terminal, recovery } => {
+                    Some(recovery.diagnose(*terminal, &#table_mod::ERROR_INFO))
+                }
+                #gazelle_crate_path::ParseError::Action { .. } => None,
+            }
+        }
+
         /// Type-safe LR parser.
         #vis struct #parser_struct<A: #types_trait> {
             parser: #gazelle_crate_path::Parser<'static>,
@@ -206,9 +233,30 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 &#table_mod::ERROR_INFO
             }
 
-            /// Recover from a parse error by searching for minimum-cost repairs.
-            pub fn recover(&mut self, buffer: &[#gazelle_crate_path::Token]) -> Vec<#gazelle_crate_path::RecoveryInfo> {
-                self.parser.recover(buffer)
+            /// Abandon semantic parsing and enter syntax-only recovery.
+            pub fn into_recovery(mut self) -> #gazelle_crate_path::RecoveryParser<'static> {
+                self.drain_values();
+                let parser = core::mem::replace(
+                    &mut self.parser,
+                    #gazelle_crate_path::Parser::new(#table_mod::TABLE),
+                );
+                parser.into_recovery()
+            }
+
+            /// Consume this semantic parser and search for syntax repairs.
+            ///
+            /// The returned recovery parser has no semantic `push` or `finish`
+            /// methods, so a discarded semantic value stack cannot be reused.
+            pub fn recover(
+                self,
+                buffer: &[#gazelle_crate_path::Token],
+            ) -> (
+                #gazelle_crate_path::RecoveryParser<'static>,
+                Vec<#gazelle_crate_path::RecoveryInfo>,
+            ) {
+                let mut recovery = self.into_recovery();
+                let errors = recovery.recover(buffer);
+                (recovery, errors)
             }
 
             fn drain_values(&mut self) {
@@ -228,7 +276,11 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
         #[allow(clippy::result_large_err)]
         impl<A: #types_trait #(#reducer_bounds)*> #parser_struct<A> {
             /// Push a terminal, performing any reductions.
-            pub fn push(&mut self, terminal: #terminal_enum<A>, actions: &mut A) -> Result<(), #gazelle_crate_path::ParseError<A::Error>> {
+            pub fn push(
+                mut self,
+                terminal: #terminal_enum<A>,
+                actions: &mut A,
+            ) -> Result<Self, #gazelle_crate_path::ParseError<A::Error, #gazelle_crate_path::RecoveryParser<'static>>> {
                 let token = #gazelle_crate_path::Token {
                     terminal: terminal.symbol_id(),
                     resolution: terminal.resolution(),
@@ -237,13 +289,18 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 loop {
                     match self.parser.maybe_reduce(Some(token)) {
                         Ok(Some((rule, _, start_idx))) => {
-                            self.do_reduce(rule, start_idx, actions).map_err(#gazelle_crate_path::ParseError::Action)?;
+                            if let Err(e) = self.do_reduce(rule, start_idx, actions) {
+                                let recovery = self.into_recovery();
+                                return Err(#gazelle_crate_path::ParseError::Action { error: e, recovery });
+                            }
                         }
                         Ok(None) => break,
                         Err(e) => {
                             self.drain_values();
                             self.parser.restore_checkpoint();
-                            return Err(e.cast());
+                            let #gazelle_crate_path::ParseError::Syntax { terminal, .. } = e;
+                            let recovery = self.into_recovery();
+                            return Err(#gazelle_crate_path::ParseError::Syntax { terminal, recovery });
                         }
                     }
                 }
@@ -255,7 +312,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     #(#shift_arms)*
                 }
 
-                Ok(())
+                Ok(self)
             }
 
             /// Finish parsing and return the result.

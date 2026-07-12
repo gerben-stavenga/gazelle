@@ -66,17 +66,16 @@ fn parse_dynamic(input: &str) -> Result<Expr, String> {
     let mut actions = DynBuilder;
 
     for tok in tokens {
-        parser
+        parser = parser
             .push(tok, &mut actions)
             .map_err(|e| format!("{:?}", e))?;
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| {
-        p.format_error(
-            {
-                let gazelle::ParseError::Syntax { terminal } = e;
-                terminal
-            },
+    parser.finish(&mut actions).map_err(|e| {
+        let gazelle::ParseError::Syntax { terminal, recovery } = e;
+        recovery.format_error(
+            terminal,
+            dynamic::Parser::<DynBuilder>::error_info(),
             None,
             None,
         )
@@ -181,17 +180,16 @@ fn parse_fixed(input: &str) -> Result<Expr, String> {
     let mut actions = FixedBuilder;
 
     for tok in tokens {
-        parser
+        parser = parser
             .push(tok, &mut actions)
             .map_err(|e| format!("{:?}", e))?;
     }
 
-    parser.finish(&mut actions).map_err(|(p, e)| {
-        p.format_error(
-            {
-                let gazelle::ParseError::Syntax { terminal } = e;
-                terminal
-            },
+    parser.finish(&mut actions).map_err(|e| {
+        let gazelle::ParseError::Syntax { terminal, recovery } = e;
+        recovery.format_error(
+            terminal,
+            fixed::Parser::<FixedBuilder>::error_info(),
             None,
             None,
         )
