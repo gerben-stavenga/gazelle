@@ -126,11 +126,8 @@ impl<I: Iterator<Item = char>> Scanner<I> {
     /// Peek at the nth character ahead (0 = next char).
     pub fn peek_n(&mut self, n: usize) -> Option<char> {
         while self.lookahead.len() <= n {
-            if let Some(c) = self.chars.next() {
-                self.lookahead.push_back(c);
-            } else {
-                return None;
-            }
+            let c = self.chars.next()?;
+            self.lookahead.push_back(c);
         }
         self.lookahead.get(n).copied()
     }

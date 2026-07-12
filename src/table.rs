@@ -597,6 +597,8 @@ pub use alloc_impl::{CompiledTable, Conflict};
 
 #[cfg(test)]
 mod tests {
+    use alloc::format;
+
     use super::*;
     use crate::lr::{GrammarInternal, to_grammar_internal};
     use crate::meta::parse_grammar;
@@ -901,6 +903,32 @@ mod tests {
             found_shift_or_reduce,
             "Expected ShiftOrReduce action for OP"
         );
+    }
+
+    #[test]
+    fn test_modified_terminals_report_reduce_reduce_conflict() {
+        for modifier in ["prec", "conflict", "shift", "reduce"] {
+            let grammar = parse_grammar(&format!(
+                r#"
+            start s;
+            terminals {{ {modifier} A }}
+            s = x A => x | y A => y;
+            x = _ => e;
+            y = _ => e;
+        "#
+            ))
+            .unwrap();
+
+            let compiled = CompiledTable::build(&grammar).unwrap();
+            let a = compiled.symbol_id("A").unwrap();
+            assert!(
+                compiled.conflicts().iter().any(|conflict| matches!(
+                    conflict,
+                    Conflict::ReduceReduce { terminal, .. } if *terminal == a
+                )),
+                "{modifier} terminal hid the R/R conflict"
+            );
+        }
     }
 
     #[test]

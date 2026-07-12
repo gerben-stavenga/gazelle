@@ -75,14 +75,14 @@ fn print_tree(tree: &Cst, indent: usize, compiled: &CompiledTable, values: &[Opt
 /// Error type for runtime grammar actions.
 #[derive(Debug)]
 enum ActionError {
-    Parse(gazelle::SymbolId),
+    Parse(String),
     Runtime(String),
 }
 
 impl std::fmt::Display for ActionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ActionError::Parse(t) => write!(f, "parse error: {:?}", t),
+            ActionError::Parse(message) => write!(f, "parse error: {}", message),
             ActionError::Runtime(s) => write!(f, "{}", s),
         }
     }
@@ -134,8 +134,9 @@ impl<'a> gazelle::Action<token_format::Sentence<Self>> for Actions<'a> {
                 print_tree(&tree, 0, self.compiled, &parser.values);
                 println!();
             }
-            Err((_cst, gazelle::ParseError::Syntax { terminal })) => {
-                return Err(ActionError::Parse(terminal));
+            Err((cst, gazelle::ParseError::Syntax { terminal })) => {
+                let message = cst.format_error(terminal, self.compiled, None, None);
+                return Err(ActionError::Parse(message));
             }
         }
         Ok(())
@@ -179,7 +180,8 @@ impl<'a> gazelle::Action<token_format::Tokens<Self>> for Actions<'a> {
                 parser.values.push(value);
                 let res = parser.cst.push(token);
                 if let Err(gazelle::ParseError::Syntax { terminal }) = res {
-                    return Err(ActionError::Parse(terminal));
+                    let message = parser.cst.format_error(terminal, self.compiled, None, None);
+                    return Err(ActionError::Parse(message));
                 }
                 Ok(parser)
             }
@@ -245,11 +247,8 @@ fn run() -> Result<(), String> {
             gazelle::ParseError::Syntax { terminal } => {
                 format!("parse error: {}", parser.format_error(terminal, None, None))
             }
-            gazelle::ParseError::Action(ActionError::Parse(t)) => {
-                format!(
-                    "runtime parse error: {}",
-                    parser.format_error(t, None, None)
-                )
+            gazelle::ParseError::Action(ActionError::Parse(message)) => {
+                format!("runtime parse error: {}", message)
             }
             gazelle::ParseError::Action(ActionError::Runtime(e)) => format!("action error: {}", e),
         })?;
@@ -261,11 +260,8 @@ fn run() -> Result<(), String> {
                 p.format_error(terminal, None, None)
             )
         }
-        gazelle::ParseError::Action(ActionError::Parse(t)) => {
-            format!(
-                "runtime parse error at end: {}",
-                p.format_error(t, None, None)
-            )
+        gazelle::ParseError::Action(ActionError::Parse(message)) => {
+            format!("runtime parse error at end: {}", message)
         }
         gazelle::ParseError::Action(ActionError::Runtime(e)) => {
             format!("action error at end: {}", e)
