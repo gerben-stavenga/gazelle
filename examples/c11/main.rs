@@ -767,17 +767,16 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
     let mut lexer = C11Lexer::new(input);
     let display_names = c11_display_names();
     let mut token_texts: Vec<String> = Vec::new();
-    let mut token_count = 0;
 
     loop {
         let tok = lexer.next(&actions.ctx)?;
         match tok {
             Some((t, span)) => {
                 token_texts.push(input[span.clone()].to_string());
-                token_count += 1;
                 parser.push(t, &mut actions).map_err(|e| {
+                    let (line, col) = lexer.src.line_col(span.start);
                     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
-                    format!("Parse error at token {}: {}", token_count, {
+                    format!("Parse error at {line}:{col}: {}", {
                         let gazelle::ParseError::Syntax { terminal } = e;
                         parser.format_error(terminal, Some(&display_names), Some(&tokens))
                     },)
@@ -804,6 +803,8 @@ struct RecoveryError {
     line: usize,
     col: usize,
     line_text: String,
+    token_text: Option<String>,
+    marker_width: usize,
     repairs: Vec<gazelle::Repair>,
 }
 
@@ -886,17 +887,31 @@ fn to_result(
             let pos = e.position + base;
             if pos < spans.len() {
                 let (line, col) = lexer.src.line_col(spans[pos].start);
+                let marker_width = if e
+                    .repairs
+                    .iter()
+                    .any(|repair| matches!(repair, gazelle::Repair::Delete(_)))
+                {
+                    source[spans[pos].clone()].chars().count().max(1)
+                } else {
+                    1
+                };
                 RecoveryError {
                     line,
                     col,
                     line_text: lines.get(line - 1).unwrap_or(&"").to_string(),
+                    token_text: Some(source[spans[pos].clone()].to_string()),
+                    marker_width,
                     repairs: e.repairs,
                 }
             } else {
+                let (line, col) = lexer.src.line_col(source.len());
                 RecoveryError {
-                    line: 0,
-                    col: 0,
-                    line_text: String::new(),
+                    line,
+                    col,
+                    line_text: lines.get(line.saturating_sub(1)).unwrap_or(&"").to_string(),
+                    token_text: None,
+                    marker_width: 1,
                     repairs: e.repairs,
                 }
             }
@@ -954,7 +969,10 @@ fn main() {
                                 .find(|(k, _)| *k == name)
                                 .map(|(_, v)| *v)
                                 .unwrap_or(name);
-                            format!("insert {}", shown)
+                            match &err.token_text {
+                                Some(token) => format!("insert {} before '{}'", shown, token),
+                                None => format!("insert {}", shown),
+                            }
                         }
                         gazelle::Repair::Delete(id) => {
                             let name = ctx.symbol_name(*id);
@@ -963,7 +981,10 @@ fn main() {
                                 .find(|(k, _)| *k == name)
                                 .map(|(_, v)| *v)
                                 .unwrap_or(name);
-                            format!("delete {}", shown)
+                            match &err.token_text {
+                                Some(token) => format!("delete '{}'", token),
+                                None => format!("delete {}", shown),
+                            }
                         }
                         gazelle::Repair::Shift => "shift".to_string(),
                     })
@@ -977,7 +998,11 @@ fn main() {
                         repair_strs.join(", ")
                     );
                     println!("    {}", err.line_text);
-                    println!("    {}^^", " ".repeat(err.col - 1));
+                    println!(
+                        "    {}{}",
+                        " ".repeat(err.col - 1),
+                        "^".repeat(err.marker_width)
+                    );
                 } else {
                     println!("  {}:EOF: {}", path, repair_strs.join(", "));
                 }

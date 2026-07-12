@@ -860,6 +860,7 @@ impl<'a> Parser<'a> {
             .map(|&sym| format_sym(display(SymbolId(sym as u32))))
             .collect();
         expected.sort();
+        expected.dedup();
 
         // Show actual token text if available, otherwise display name
         let found_name = tokens
@@ -922,10 +923,26 @@ impl<'a> Parser<'a> {
         }
 
         // Show informative items that explain what's expected
-        let display_items = &relevant_items;
+        // Prefer a short explanation over dumping every active item. In large
+        // grammars, a single error state can contain many sibling alternatives
+        // (postfix operators are a common example). Keep the most progressed
+        // item per nonterminal, then show at most four surrounding contexts.
+        let mut display_items = relevant_items.clone();
+        display_items.sort_by(|&(rule_a, dot_a), &(rule_b, dot_b)| {
+            dot_b
+                .cmp(&dot_a)
+                .then_with(|| ctx.rule_rhs(rule_b).len().cmp(&ctx.rule_rhs(rule_a).len()))
+                .then_with(|| rule_a.cmp(&rule_b))
+        });
+        let mut seen_lhs = BTreeSet::new();
+        display_items.retain(|&(rule, _)| {
+            let lhs = self.table.rule_info(rule).0;
+            seen_lhs.insert(format_sym(display(lhs)))
+        });
+        display_items.truncate(4);
         let mut seen = BTreeSet::new();
 
-        for &(rule, dot) in display_items {
+        for &(rule, dot) in &display_items {
             let rhs = ctx.rule_rhs(rule);
             let lhs = self.table.rule_info(rule).0;
             if ctx.symbol_name(lhs) == "__start" {
@@ -1200,7 +1217,7 @@ impl<'a> Parser<'a> {
         let mut pq: BinaryHeap<Reverse<(usize, usize, usize)>> = BinaryHeap::new();
         // States: (sim, buf_pos, parent_info)
         let mut states: Vec<RecoveryState<'a>> = Vec::new();
-        let mut visited: BTreeSet<(usize, usize, usize)> = BTreeSet::new();
+        let mut visited: BTreeSet<(Vec<(usize, u16)>, usize)> = BTreeSet::new();
 
         states.push((SimState::from_parser(self), start, None));
         pq.push(Reverse((0, buf_len - start, 0)));
@@ -1214,7 +1231,11 @@ impl<'a> Parser<'a> {
             let pos = states[state_idx].1;
             let remaining = buf_len - pos;
 
-            let key = (sim.state, sim.depth, pos);
+            // The top state and depth do not uniquely identify an LR
+            // configuration: different deeper stacks can expose different goto
+            // states after a reduction. Include the full state/precedence stack
+            // so recovery never prunes a semantically distinct configuration.
+            let key = (sim.configuration_signature(), pos);
             if !visited.insert(key) {
                 continue;
             }
@@ -1224,6 +1245,7 @@ impl<'a> Parser<'a> {
                 let mut candidate = sim.clone();
                 if candidate.try_accept() {
                     let edits = Self::reconstruct_edits(&states, state_idx);
+                    candidate.write_back(self, buf_len - start);
                     return Self::edits_to_errors(&edits, start);
                 }
             }
@@ -1340,6 +1362,54 @@ struct SimStackNode {
 }
 
 impl<'a> SimState<'a> {
+    fn write_back(&self, parser: &mut Parser<'a>, source_tokens_consumed: usize) {
+        let mut entries = Vec::with_capacity(self.depth);
+        let mut node = self.stack.as_ref();
+        while let Some(entry) = node {
+            entries.push(StackEntry {
+                state: entry.state,
+                prec: entry.prec,
+                token_idx: entry.token_idx,
+            });
+            node = entry.parent.as_ref();
+        }
+        entries.reverse();
+
+        parser.stack = LrStack {
+            len: entries.len(),
+            entries,
+        };
+        parser.state = StackEntry {
+            state: self.state,
+            prec: self.prec,
+            token_idx: self.token_idx,
+        };
+        // Deleted tokens still advance the caller's source position even though
+        // they were not shifted into the repaired parse.
+        parser.token_count += source_tokens_consumed;
+        parser.save_checkpoint();
+    }
+
+    fn configuration_signature(&self) -> Vec<(usize, u16)> {
+        fn encode_prec(prec: Option<Precedence>) -> u16 {
+            match prec {
+                None => 0,
+                Some(Precedence::Left(level)) => 1 + level as u16,
+                Some(Precedence::Right(level)) => 257 + level as u16,
+            }
+        }
+
+        let mut signature = Vec::with_capacity(self.depth + 1);
+        let mut node = self.stack.as_ref();
+        while let Some(entry) = node {
+            signature.push((entry.state, encode_prec(entry.prec)));
+            node = entry.parent.as_ref();
+        }
+        signature.reverse();
+        signature.push((self.state, encode_prec(self.prec)));
+        signature
+    }
+
     fn from_parser(parser: &Parser<'a>) -> Self {
         let mut node: Option<Rc<SimStackNode>> = None;
         for i in 0..parser.stack.len() {
