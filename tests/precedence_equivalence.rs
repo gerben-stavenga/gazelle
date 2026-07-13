@@ -73,12 +73,7 @@ fn parse_dynamic(input: &str) -> Result<Expr, String> {
 
     parser.finish(&mut actions).map_err(|e| {
         let gazelle::ParseError::Syntax { terminal, recovery } = e;
-        recovery.format_error(
-            terminal,
-            dynamic::Parser::<DynBuilder>::error_info(),
-            None,
-            None,
-        )
+        recovery.format_error(terminal, None, None)
     })
 }
 
@@ -187,12 +182,7 @@ fn parse_fixed(input: &str) -> Result<Expr, String> {
 
     parser.finish(&mut actions).map_err(|e| {
         let gazelle::ParseError::Syntax { terminal, recovery } = e;
-        recovery.format_error(
-            terminal,
-            fixed::Parser::<FixedBuilder>::error_info(),
-            None,
-            None,
-        )
+        recovery.format_error(terminal, None, None)
     })
 }
 

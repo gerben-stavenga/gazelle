@@ -13,12 +13,14 @@
 
 #![allow(dead_code)]
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::{format, vec, vec::Vec};
 
 use crate as gazelle;
 use crate::automaton::Nfa;
+use crate::diagnostic::SyntaxDiagnostic;
 
 // ============================================================================
 // Generated parser
@@ -26,16 +28,57 @@ use crate::automaton::Nfa;
 
 include!("regex_generated.rs");
 
+/// Why a regex failed to compile.
+///
+/// Lexical problems are described in place. A parser rejection is kept as
+/// grammar-level data, so applications can own its presentation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RegexCause {
+    /// A lexical problem, described in place.
+    Message(String),
+    /// The regex parser rejected a token.
+    Syntax(Box<SyntaxDiagnostic>),
+}
+
 /// Error from regex parsing.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RegexError {
-    pub message: String,
+    /// What went wrong, in grammar terms.
+    pub cause: RegexCause,
+    /// Byte offset into the regex pattern.
     pub offset: usize,
+    /// Source text of each token, used to render a [`RegexCause::Syntax`].
+    token_texts: Vec<String>,
+}
+
+impl RegexError {
+    /// A lexical error described in place.
+    fn at(offset: usize, message: impl Into<String>) -> Self {
+        Self {
+            cause: RegexCause::Message(message.into()),
+            offset,
+            token_texts: Vec::new(),
+        }
+    }
+}
+
+impl RegexError {
+    /// Render the cause as prose.
+    pub fn message(&self) -> String {
+        match &self.cause {
+            RegexCause::Message(message) => message.clone(),
+            RegexCause::Syntax(diagnostic) => {
+                let texts: Vec<&str> = self.token_texts.iter().map(String::as_str).collect();
+                let tokens = (!texts.is_empty()).then_some(&texts[..]);
+                diagnostic.render(Parser::<NfaBuilder>::error_info(), None, tokens)
+            }
+        }
+    }
 }
 
 impl core::fmt::Display for RegexError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "regex error at {}: {}", self.offset, self.message)
+        write!(f, "regex error at {}: {}", self.offset, self.message())
     }
 }
 
@@ -410,10 +453,7 @@ impl gazelle::Action<ClassItem<Self>> for NfaBuilder {
         Ok(match node {
             ClassItem::Range(lo, hi) => {
                 if lo > hi {
-                    return Err(RegexError {
-                        message: format!("invalid range {}-{}", lo, hi),
-                        offset: 0,
-                    });
+                    return Err(RegexError::at(0, format!("invalid range {}-{}", lo, hi)));
                 }
                 vec![(lo, hi)]
             }
@@ -444,11 +484,50 @@ impl gazelle::Action<ClassChar<Self>> for NfaBuilder {
 // Stateless lexer
 // ============================================================================
 
-fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
+/// Turn a parser rejection into a located [`RegexError`], keeping the
+/// grammar-level diagnosis instead of collapsing it to a symbol ID.
+///
+/// The parser has consumed `token_count()` tokens when it rejects, so that
+/// index names the offending token; past the last token the error is at end of
+/// input.
+fn syntax_error(
+    error: crate::ParseError<RegexError, crate::RecoveryParser<'static>>,
+    input: &[u8],
+    starts: &[usize],
+) -> RegexError {
+    let (terminal, recovery) = match error {
+        crate::ParseError::Syntax { terminal, recovery } => (terminal, recovery),
+        crate::ParseError::Action { error, .. } => return error,
+    };
+
+    let index = recovery.token_count();
+    let offset = starts.get(index).copied().unwrap_or(input.len());
+
+    // Token text is the source slice up to the next token's start.
+    let token_texts = starts
+        .iter()
+        .enumerate()
+        .map(|(i, &start)| {
+            let end = starts.get(i + 1).copied().unwrap_or(input.len());
+            String::from_utf8_lossy(&input[start..end]).into_owned()
+        })
+        .collect();
+
+    RegexError {
+        cause: RegexCause::Syntax(Box::new(recovery.diagnose(terminal))),
+        offset,
+        token_texts,
+    }
+}
+
+/// Lex a regex, returning each token with the byte offset it started at.
+fn lex_regex(input: &[u8]) -> Result<(Vec<Terminal<NfaBuilder>>, Vec<usize>), RegexError> {
     let mut tokens = Vec::new();
+    let mut starts = Vec::new();
     let mut pos = 0;
 
     while pos < input.len() {
+        let start = pos;
         let b = input[pos];
         let tok = match b {
             b'*' => {
@@ -497,10 +576,9 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
             }
             b'\\' => {
                 pos += 1;
-                let c = *input.get(pos).ok_or_else(|| RegexError {
-                    message: "unexpected end after '\\'".into(),
-                    offset: pos,
-                })?;
+                let c = *input
+                    .get(pos)
+                    .ok_or_else(|| RegexError::at(pos, "unexpected end after '\\'"))?;
                 pos += 1;
                 match c {
                     b'd' => Terminal::Shorthand(Shorthand::Digit),
@@ -513,50 +591,44 @@ fn lex_regex(input: &[u8]) -> Result<Vec<Terminal<NfaBuilder>>, RegexError> {
                     b't' => Terminal::Char('\t'),
                     b'r' => Terminal::Char('\r'),
                     b'x' => {
-                        let h1 = *input.get(pos).ok_or_else(|| RegexError {
-                            message: "expected hex digit".into(),
-                            offset: pos,
-                        })?;
-                        let h2 = *input.get(pos + 1).ok_or_else(|| RegexError {
-                            message: "expected hex digit".into(),
-                            offset: pos + 1,
-                        })?;
-                        let v = hex_val(h1).ok_or_else(|| RegexError {
-                            message: "invalid hex digit".into(),
-                            offset: pos,
-                        })? * 16
-                            + hex_val(h2).ok_or_else(|| RegexError {
-                                message: "invalid hex digit".into(),
-                                offset: pos + 1,
-                            })?;
+                        let h1 = *input
+                            .get(pos)
+                            .ok_or_else(|| RegexError::at(pos, "expected hex digit"))?;
+                        let h2 = *input
+                            .get(pos + 1)
+                            .ok_or_else(|| RegexError::at(pos + 1, "expected hex digit"))?;
+                        let v = hex_val(h1)
+                            .ok_or_else(|| RegexError::at(pos, "invalid hex digit"))?
+                            * 16
+                            + hex_val(h2)
+                                .ok_or_else(|| RegexError::at(pos + 1, "invalid hex digit"))?;
                         pos += 2;
                         Terminal::Char(char::from(v))
                     }
                     b'\\' | b'|' | b'(' | b')' | b'[' | b']' | b'*' | b'+' | b'?' | b'.' | b'^'
                     | b'$' | b'{' | b'}' | b'-' => Terminal::Char(c as char),
                     _ => {
-                        return Err(RegexError {
-                            message: format!("unknown escape '\\{}'", c as char),
-                            offset: pos - 1,
-                        });
+                        return Err(RegexError::at(
+                            pos - 1,
+                            format!("unknown escape '\\{}'", c as char),
+                        ));
                     }
                 }
             }
             _ => {
                 // Decode full UTF-8 codepoint and emit as single CHAR token
-                let s = core::str::from_utf8(&input[pos..]).map_err(|_| RegexError {
-                    message: "invalid UTF-8".into(),
-                    offset: pos,
-                })?;
+                let s = core::str::from_utf8(&input[pos..])
+                    .map_err(|_| RegexError::at(pos, "invalid UTF-8"))?;
                 let ch = s.chars().next().unwrap();
                 pos += ch.len_utf8();
                 Terminal::Char(ch)
             }
         };
         tokens.push(tok);
+        starts.push(start);
     }
 
-    Ok(tokens)
+    Ok((tokens, starts))
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -588,7 +660,8 @@ fn hex_val(b: u8) -> Option<u8> {
 /// - Dot: `.` (any byte except `\n`)
 /// - Shorthand classes: `\d`, `\w`, `\s` and negations `\D`, `\W`, `\S`
 pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
-    let tokens = lex_regex(pattern.as_bytes())?;
+    let input = pattern.as_bytes();
+    let (tokens, starts) = lex_regex(input)?;
 
     let mut builder = NfaBuilder { nfa: Nfa::new() };
     let state0 = builder.nfa.add_state();
@@ -596,21 +669,13 @@ pub fn regex_to_nfa(pattern: &str) -> Result<(Nfa, usize), RegexError> {
 
     let mut parser = Parser::<NfaBuilder>::new();
     for tok in tokens {
-        parser = parser.push(tok, &mut builder).map_err(|e| match e {
-            crate::ParseError::Syntax { terminal, .. } => RegexError {
-                message: format!("unexpected terminal {:?}", terminal),
-                offset: 0,
-            },
-            crate::ParseError::Action { error, .. } => error,
-        })?;
+        parser = parser
+            .push(tok, &mut builder)
+            .map_err(|e| syntax_error(e, input, &starts))?;
     }
-    let frag = parser.finish(&mut builder).map_err(|e| match e {
-        crate::ParseError::Syntax { terminal, .. } => RegexError {
-            message: format!("unexpected terminal {:?}", terminal),
-            offset: 0,
-        },
-        crate::ParseError::Action { error, .. } => error,
-    })?;
+    let frag = parser
+        .finish(&mut builder)
+        .map_err(|e| syntax_error(e, input, &starts))?;
 
     builder.nfa.add_epsilon(0, frag.start);
     Ok((builder.nfa, frag.end))

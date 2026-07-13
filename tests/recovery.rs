@@ -177,13 +177,21 @@ fn recover_direct_api() {
     let result = parser.maybe_reduce(Some(id));
     assert!(result.is_err(), "expected error on second ID without SEMI");
 
+    // Recovery carries the dynamic grammar's diagnostic context.
+    let mut recovery = parser.into_recovery(&compiled);
+    let diagnostic = recovery.diagnose(id.terminal);
+    assert_eq!(diagnostic.unexpected, id.terminal);
+    assert!(diagnostic.expected.contains(&semi.terminal));
+
     // Recover with remaining tokens: [ID, SEMI]
     let remaining = vec![id, semi];
-    let errors = parser.recover(&remaining);
+    let errors = recovery.recover(&remaining);
     assert!(!errors.is_empty(), "expected recovery errors");
 
-    assert!(
-        matches!(parser.maybe_reduce(None), Ok(Some((0, _, _)))),
+    let outcome = recovery.recover_with_limits(&[], RecoveryLimits::default());
+    assert_eq!(
+        outcome.status,
+        RecoveryStatus::Recovered,
         "recover should leave the parser in the successful repaired state"
     );
 }

@@ -66,7 +66,7 @@ fn parse(input: &str) -> Result<i64, String> {
         };
         parser = parser.push(tok, &mut actions).map_err(
             |gazelle::ParseError::Syntax { terminal, recovery }| {
-                recovery.format_error(terminal, sum::Parser::<Eval>::error_info(), None, None)
+                recovery.format_error(terminal, None, None)
             },
         )?;
     }
@@ -74,7 +74,7 @@ fn parse(input: &str) -> Result<i64, String> {
     parser
         .finish(&mut actions)
         .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
-            recovery.format_error(terminal, sum::Parser::<Eval>::error_info(), None, None)
+            recovery.format_error(terminal, None, None)
         })
 }
 

@@ -1,4 +1,4 @@
-//! Verify that `src/meta_generated.rs` matches the output of `gazelle --rust grammars/meta.gzl`.
+//! Verify that `src/meta_generated.rs` matches what codegen currently emits.
 
 use std::process::Command;
 
@@ -33,7 +33,7 @@ fn meta_generated_matches_codegen_output() {
     if expected != actual {
         panic!(
             "src/meta_generated.rs is out of date!\n\
-             Regenerate with: cargo run -- --rust grammars/meta.gzl > src/meta_generated.rs"
+             Regenerate with: ./bootstrap.sh"
         );
     }
 }

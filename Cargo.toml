@@ -6,7 +6,7 @@ exclude = ["nightly-examples"]
 
 [package]
 name = "gazelle-parser"
-version = "0.9.3"
+version = "0.10.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"

@@ -234,6 +234,10 @@ mod alloc_impl {
         }
 
         /// Build parse tables from internal grammar representation using NFA → DFA → Hopcroft.
+        ///
+        /// Only table *construction* reaches this; a build that ships tables
+        /// generated ahead of time never calls it.
+        #[cfg(any(test, feature = "codegen"))]
         pub(crate) fn build_from_internal(grammar: &GrammarInternal) -> Self {
             Self::build_from_internal_with_options(grammar, TableBuildOptions::default())
         }

@@ -11,12 +11,14 @@
 
 #![allow(dead_code)]
 
+use alloc::boxed::Box;
 use alloc::string::{String, ToString};
 use alloc::{format, vec::Vec};
 use core::fmt;
 use core::ops::Range;
 
 use crate as gazelle;
+use crate::diagnostic::SyntaxDiagnostic;
 use crate::grammar;
 use crate::lexer::Scanner;
 
@@ -158,11 +160,24 @@ impl gazelle::Action<Term<Self>> for AstBuilder {
 // Lexer
 // ============================================================================
 
+/// Why a grammar failed to parse.
+///
+/// Lexical and structural problems are described here directly. A parser
+/// rejection is kept as grammar-level data, so reporting it stays optional:
+/// parsing a grammar never requires a renderer, only reporting does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrammarCause {
+    /// A lexical or structural problem, described in place.
+    Message(String),
+    /// The grammar parser rejected a token.
+    Syntax(Box<SyntaxDiagnostic>),
+}
+
 /// A source-located error produced while parsing textual Gazelle grammar syntax.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrammarDiagnostic {
-    /// Human-readable description and parser context.
-    pub message: String,
+    /// What went wrong, in grammar terms.
+    pub cause: GrammarCause,
     /// Byte range in the grammar source. Empty at end of input.
     pub span: Range<usize>,
     /// One-based source line.
@@ -173,10 +188,12 @@ pub struct GrammarDiagnostic {
     pub line_text: String,
     /// Width of the primary marker in source characters.
     pub marker_width: usize,
+    /// Source text of each token, used to render a [`GrammarCause::Syntax`].
+    token_texts: Vec<String>,
 }
 
 impl GrammarDiagnostic {
-    fn new(input: &str, span: Range<usize>, message: impl Into<String>) -> Self {
+    fn new(input: &str, span: Range<usize>, cause: impl Into<GrammarCause>) -> Self {
         let start = span.start.min(input.len());
         let end = span.end.min(input.len()).max(start);
         let line_start = input[..start].rfind('\n').map_or(0, |i| i + 1);
@@ -185,12 +202,50 @@ impl GrammarDiagnostic {
         let column = input[line_start..start].chars().count() + 1;
         let marker_width = input[start..end.min(line_end)].chars().count().max(1);
         Self {
-            message: message.into(),
+            cause: cause.into(),
             span: start..end,
             line,
             column,
             line_text: input[line_start..line_end].to_string(),
             marker_width,
+            token_texts: Vec::new(),
+        }
+    }
+
+    fn with_token_texts(mut self, token_texts: Vec<String>) -> Self {
+        self.token_texts = token_texts;
+        self
+    }
+}
+
+impl From<&str> for GrammarCause {
+    fn from(message: &str) -> Self {
+        GrammarCause::Message(message.to_string())
+    }
+}
+
+impl From<String> for GrammarCause {
+    fn from(message: String) -> Self {
+        GrammarCause::Message(message)
+    }
+}
+
+impl From<SyntaxDiagnostic> for GrammarCause {
+    fn from(diagnostic: SyntaxDiagnostic) -> Self {
+        GrammarCause::Syntax(Box::new(diagnostic))
+    }
+}
+
+impl GrammarDiagnostic {
+    /// Render the cause as prose.
+    pub fn message(&self) -> String {
+        match &self.cause {
+            GrammarCause::Message(message) => message.clone(),
+            GrammarCause::Syntax(diagnostic) => {
+                let texts: Vec<&str> = self.token_texts.iter().map(String::as_str).collect();
+                let tokens = (!texts.is_empty()).then_some(&texts[..]);
+                diagnostic.render(Parser::<AstBuilder>::error_info(), None, tokens)
+            }
         }
     }
 }
@@ -202,7 +257,7 @@ impl fmt::Display for GrammarDiagnostic {
             "{}:{}: {}\n  |\n{} | {}\n  | {}{}",
             self.line,
             self.column,
-            self.message,
+            self.message(),
             self.line,
             self.line_text,
             " ".repeat(self.column.saturating_sub(1)),
@@ -373,8 +428,8 @@ fn lex_grammar(input: &str) -> Result<Vec<LocatedToken>, GrammarDiagnostic> {
 // Parsing API
 // ============================================================================
 
-/// Parse tokens into typed AST.
-pub fn parse_tokens_typed<I>(tokens: I) -> Result<grammar::Grammar, String>
+/// Parse tokens into typed AST, describing a rejection in grammar terms.
+pub fn parse_tokens_diagnostic<I>(tokens: I) -> Result<grammar::Grammar, SyntaxDiagnostic>
 where
     I: IntoIterator<Item = Terminal<AstBuilder>>,
 {
@@ -385,23 +440,25 @@ where
         parser = match parser.push(tok, &mut actions) {
             Ok(parser) => parser,
             Err(crate::ParseError::Syntax { terminal, recovery }) => {
-                return Err(recovery.format_error(
-                    terminal,
-                    Parser::<AstBuilder>::error_info(),
-                    None,
-                    None,
-                ));
+                return Err(recovery.diagnose(terminal));
             }
             Err(crate::ParseError::Action { error, .. }) => match error {},
         };
     }
 
     parser.finish(&mut actions).map_err(|error| match error {
-        crate::ParseError::Syntax { terminal, recovery } => {
-            recovery.format_error(terminal, Parser::<AstBuilder>::error_info(), None, None)
-        }
+        crate::ParseError::Syntax { terminal, recovery } => recovery.diagnose(terminal),
         crate::ParseError::Action { error, .. } => match error {},
     })
+}
+
+/// Parse tokens into typed AST.
+pub fn parse_tokens_typed<I>(tokens: I) -> Result<grammar::Grammar, String>
+where
+    I: IntoIterator<Item = Terminal<AstBuilder>>,
+{
+    parse_tokens_diagnostic(tokens)
+        .map_err(|diagnostic| diagnostic.render(Parser::<AstBuilder>::error_info(), None, None))
 }
 
 /// Parse a grammar string into a Grammar AST.
@@ -416,25 +473,21 @@ pub fn parse_grammar_diagnostic(input: &str) -> Result<grammar::Grammar, Grammar
         return Err(GrammarDiagnostic::new(input, 0..0, "empty grammar"));
     }
 
-    let mut parser = Parser::<AstBuilder>::new();
-    let mut actions = AstBuilder;
-    let token_texts_owned: Vec<String> = tokens
+    let token_texts: Vec<String> = tokens
         .iter()
         .map(|token| input[token.span.clone()].to_string())
         .collect();
-    let token_texts: Vec<&str> = token_texts_owned.iter().map(String::as_str).collect();
+
+    let mut parser = Parser::<AstBuilder>::new();
+    let mut actions = AstBuilder;
 
     for token in tokens {
         parser = match parser.push(token.terminal, &mut actions) {
             Ok(parser) => parser,
             Err(crate::ParseError::Syntax { terminal, recovery }) => {
-                let message = recovery.format_error(
-                    terminal,
-                    Parser::<AstBuilder>::error_info(),
-                    None,
-                    Some(&token_texts),
-                );
-                return Err(GrammarDiagnostic::new(input, token.span, message));
+                let diagnostic = recovery.diagnose(terminal);
+                return Err(GrammarDiagnostic::new(input, token.span, diagnostic)
+                    .with_token_texts(token_texts));
             }
             Err(crate::ParseError::Action { error, .. }) => match error {},
         };
@@ -442,13 +495,9 @@ pub fn parse_grammar_diagnostic(input: &str) -> Result<grammar::Grammar, Grammar
 
     parser.finish(&mut actions).map_err(|error| match error {
         crate::ParseError::Syntax { terminal, recovery } => {
-            let message = recovery.format_error(
-                terminal,
-                Parser::<AstBuilder>::error_info(),
-                None,
-                Some(&token_texts),
-            );
-            GrammarDiagnostic::new(input, input.len()..input.len(), message)
+            let diagnostic = recovery.diagnose(terminal);
+            GrammarDiagnostic::new(input, input.len()..input.len(), diagnostic)
+                .with_token_texts(token_texts)
         }
         crate::ParseError::Action { error, .. } => match error {},
     })
@@ -480,7 +529,7 @@ mod tests {
         assert_eq!(diagnostic.column, 15);
         assert_eq!(diagnostic.span, 44..45);
         assert_eq!(diagnostic.line_text, "expr = NUM => ;");
-        assert!(diagnostic.message.contains("unexpected ';'"));
+        assert!(diagnostic.message().contains("unexpected ';'"));
         assert!(diagnostic.to_string().contains("3 | expr = NUM => ;"));
     }
 
@@ -493,7 +542,7 @@ mod tests {
         assert_eq!(diagnostic.column, 1);
         assert_eq!(diagnostic.span, 9..10);
         assert_eq!(diagnostic.line_text, "@");
-        assert_eq!(diagnostic.message, "unexpected character: '@'");
+        assert_eq!(diagnostic.message(), "unexpected character: '@'");
     }
 
     #[test]
@@ -514,7 +563,7 @@ mod tests {
         assert_eq!(diagnostic.span, input.len()..input.len());
         assert_eq!(diagnostic.line, 3);
         assert_eq!(diagnostic.column, 11);
-        assert!(diagnostic.message.contains("unexpected '$'"));
+        assert!(diagnostic.message().contains("unexpected '$'"));
     }
 
     #[test]

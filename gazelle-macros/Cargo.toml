@@ -1,6 +1,6 @@
 [package]
 name = "gazelle-macros"
-version = "0.9.3"
+version = "0.10.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -14,7 +14,7 @@ proc-macro = true
 
 [dependencies]
 proc-macro2 = "1"
-gazelle = { version = "0.9.3", path = "..", package = "gazelle-parser", default-features = false, features = ["codegen"] }
+gazelle = { version = "0.10.0", path = "..", package = "gazelle-parser", default-features = false, features = ["codegen"] }
 
 [dev-dependencies]
-gazelle = { version = "0.9.3", path = "..", package = "gazelle-parser" }
+gazelle = { version = "0.10.0", path = "..", package = "gazelle-parser" }

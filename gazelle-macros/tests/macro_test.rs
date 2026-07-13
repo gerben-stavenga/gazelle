@@ -55,7 +55,13 @@ fn generated_recovery_consumes_semantic_parser() {
         Err(error) => error,
     };
 
-    let diagnostic = simple::diagnose_error(&error).unwrap();
+    let (diagnostic, message) = match &error {
+        gazelle::ParseError::Syntax { terminal, recovery } => (
+            recovery.diagnose(*terminal),
+            recovery.format_error(*terminal, None, None),
+        ),
+        gazelle::ParseError::Action { .. } => panic!("syntax error became an action error"),
+    };
     assert_eq!(
         diagnostic.unexpected,
         simple::Terminal::<SimpleActionsImpl>::A.symbol_id()
@@ -63,11 +69,7 @@ fn generated_recovery_consumes_semantic_parser() {
     assert_eq!(diagnostic.position, 1);
     assert_eq!(diagnostic.expected, vec![gazelle::SymbolId::EOF]);
     assert_eq!(simple::symbol_name(diagnostic.unexpected), "A");
-    assert!(
-        simple::format_error(&error, None, None)
-            .unwrap()
-            .contains("unexpected 'A'")
-    );
+    assert!(message.contains("unexpected 'A'"));
     assert!(!diagnostic.stack.is_empty());
     assert!(!diagnostic.contexts.is_empty());
 

@@ -165,14 +165,16 @@ fn run(input: &str) -> Result<i64, String> {
     let mut actions = Eval;
 
     for token in tokens {
-        parser = parser.push(token, &mut actions).map_err(|error| {
-            calc::format_error(&error, None, None)
-                .unwrap_or_else(|| "semantic action failed".to_string())
+        parser = parser.push(token, &mut actions).map_err(|error| match error {
+            gazelle::ParseError::Syntax { terminal, recovery } =>
+                recovery.format_error(terminal, None, None),
+            gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
         })?;
     }
-    parser.finish(&mut actions).map_err(|error| {
-        calc::format_error(&error, None, None)
-            .unwrap_or_else(|| "semantic action failed".to_string())
+    parser.finish(&mut actions).map_err(|error| match error {
+        gazelle::ParseError::Syntax { terminal, recovery } =>
+            recovery.format_error(terminal, None, None),
+        gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
     })
 }
 
@@ -256,14 +258,16 @@ fn run(input: &str) -> Result<(), String> {
     let mut actions = Eval;
 
     for token in tokens {
-        parser = parser.push(token, &mut actions).map_err(|error| {
-            calc::format_error(&error, None, None)
-                .unwrap_or_else(|| "semantic action failed".to_string())
+        parser = parser.push(token, &mut actions).map_err(|error| match error {
+            gazelle::ParseError::Syntax { terminal, recovery } =>
+                recovery.format_error(terminal, None, None),
+            gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
         })?;
     }
-    parser.finish(&mut actions).map_err(|error| {
-        calc::format_error(&error, None, None)
-            .unwrap_or_else(|| "semantic action failed".to_string())
+    parser.finish(&mut actions).map_err(|error| match error {
+        gazelle::ParseError::Syntax { terminal, recovery } =>
+            recovery.format_error(terminal, None, None),
+        gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
     })
 }
 ```

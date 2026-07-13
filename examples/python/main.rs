@@ -161,12 +161,7 @@ macro_rules! push {
             |gazelle::ParseError::Syntax { terminal, recovery }| {
                 format!(
                     "Parse error: {}",
-                    recovery.format_error(
-                        terminal,
-                        python::Parser::<PyActions>::error_info(),
-                        None,
-                        None,
-                    )
+                    recovery.format_error(terminal, None, None,)
                 )
             },
         )?
@@ -591,12 +586,7 @@ pub fn parse(input: &str) -> Result<(), String> {
         .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
             format!(
                 "Finish error: {}",
-                recovery.format_error(
-                    terminal,
-                    python::Parser::<PyActions>::error_info(),
-                    None,
-                    None,
-                )
+                recovery.format_error(terminal, None, None,)
             )
         })?;
     Ok(())

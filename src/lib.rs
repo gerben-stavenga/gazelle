@@ -81,8 +81,10 @@ extern crate alloc;
 extern crate std;
 
 // -- Core modules (always available) --
+pub mod diagnostic;
 pub mod grammar;
 pub mod lexer;
+pub mod render;
 pub mod runtime;
 pub mod table;
 
@@ -105,17 +107,19 @@ pub use grammar::{Alt, Grammar, Rule, SymbolId, Term, TerminalDef};
 // Parse table types
 pub use table::{CompiledTable, Conflict, CounterexampleLimits, ErrorInfo, TableBuildOptions};
 
+// Grammar-level diagnostics (produced by the parser, consumed by any renderer)
+pub use diagnostic::{DiagnosticStackEntry, RuleContext, SyntaxDiagnostic};
+
 // Runtime parser types
 pub use runtime::{
-    Action, AstNode, Cst, CstParser, DiagnosticStackEntry, ErrorContext, ErrorType, FromAstNode,
-    Ignore, ParseError, ParseTable, Parser, Precedence, RecoveryInfo, RecoveryLimits,
-    RecoveryOutcome, RecoveryParser, RecoveryStatus, Repair, Resolution, RuleContext,
-    SyntaxDiagnostic, Token,
+    Action, AstNode, Cst, CstParser, ErrorContext, ErrorType, FromAstNode, Ignore, ParseError,
+    ParseTable, Parser, Precedence, RecoveryInfo, RecoveryLimits, RecoveryOutcome, RecoveryParser,
+    RecoveryStatus, Repair, Resolution, Token,
 };
 
 // Lexer DFA
 pub use lexer::{LexerDfa, OwnedLexerDfa};
 
-// Meta-grammar parser
+// Meta-grammar parser.
 #[cfg(not(feature = "bootstrap"))]
-pub use meta::{GrammarDiagnostic, parse_grammar, parse_grammar_diagnostic};
+pub use meta::{GrammarCause, GrammarDiagnostic, parse_grammar, parse_grammar_diagnostic};
