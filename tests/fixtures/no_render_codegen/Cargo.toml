@@ -1,0 +1,12 @@
+[package]
+name = "gazelle-no-default-features-test"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+gazelle = { package = "gazelle-parser", path = "../../..", default-features = false }
+gazelle-macros = { path = "../../../gazelle-macros" }
+
+[workspace]
+resolver = "3"

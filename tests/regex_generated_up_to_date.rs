@@ -33,7 +33,7 @@ fn regex_generated_matches_codegen_output() {
     if expected != actual {
         panic!(
             "src/regex_generated.rs is out of date!\n\
-             Regenerate with: cargo run -- --rust grammars/regex.gzl > src/regex_generated.rs"
+             Regenerate with: ./bootstrap.sh"
         );
     }
 }

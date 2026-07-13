@@ -728,7 +728,7 @@ fn run<I: Iterator<Item = char>>(tokenizer: &mut Tokenizer<I>) -> Result<Vec<i64
     parser
         .finish(&mut actions)
         .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
-            recovery.format_error(terminal, c11_calc::Parser::<Eval>::error_info(), None, None)
+            recovery.format_error(terminal, None, None)
         })?;
 
     Ok(actions.results)

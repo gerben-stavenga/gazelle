@@ -186,38 +186,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 .unwrap_or("<?>")
         }
 
-        /// Extract a structured, grammar-level syntax diagnosis.
-        #vis fn diagnose_error<E>(
-            error: &#gazelle_crate_path::ParseError<E, #gazelle_crate_path::RecoveryParser<'static>>,
-        ) -> Option<#gazelle_crate_path::SyntaxDiagnostic> {
-            match error {
-                #gazelle_crate_path::ParseError::Syntax { terminal, recovery } => {
-                    Some(recovery.diagnose(*terminal, &#table_mod::ERROR_INFO))
-                }
-                #gazelle_crate_path::ParseError::Action { .. } => None,
-            }
-        }
-
-        /// Format a syntax error using Gazelle's default English presentation.
-        /// Returns `None` for user action errors.
-        #vis fn format_error<E>(
-            error: &#gazelle_crate_path::ParseError<E, #gazelle_crate_path::RecoveryParser<'static>>,
-            display_names: Option<&[(&str, &str)]>,
-            tokens: Option<&[&str]>,
-        ) -> Option<String> {
-            match error {
-                #gazelle_crate_path::ParseError::Syntax { terminal, recovery } => {
-                    Some(recovery.format_error(
-                        *terminal,
-                        &#table_mod::ERROR_INFO,
-                        display_names,
-                        tokens,
-                    ))
-                }
-                #gazelle_crate_path::ParseError::Action { .. } => None,
-            }
-        }
-
         /// Type-safe LR parser.
         #vis struct #parser_struct<A: #types_trait> {
             parser: #gazelle_crate_path::Parser<'static>,
@@ -238,16 +206,6 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                 self.parser.state()
             }
 
-            /// Format a parse error into a detailed message.
-            pub fn format_error(
-                &self,
-                terminal: #gazelle_crate_path::SymbolId,
-                display_names: Option<&[(&str, &str)]>,
-                tokens: Option<&[&str]>,
-            ) -> String {
-                self.parser.format_error(terminal, &#table_mod::ERROR_INFO, display_names, tokens)
-            }
-
             /// Get the error info for custom error formatting.
             pub fn error_info() -> &'static #gazelle_crate_path::ErrorInfo<'static> {
                 &#table_mod::ERROR_INFO
@@ -260,7 +218,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> Result<TokenSt
                     &mut self.parser,
                     #gazelle_crate_path::Parser::new(#table_mod::TABLE),
                 );
-                parser.into_recovery()
+                parser.into_recovery(&#table_mod::ERROR_INFO)
             }
 
             /// Consume this semantic parser and search for syntax repairs.

@@ -778,12 +778,7 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
                     let tokens: Vec<&str> = token_texts.iter().map(String::as_str).collect();
                     format!("Parse error at {line}:{col}: {}", {
                         let gazelle::ParseError::Syntax { terminal, recovery } = e;
-                        recovery.format_error(
-                            terminal,
-                            c11::Parser::<CActions>::error_info(),
-                            Some(&display_names),
-                            Some(&tokens),
-                        )
+                        recovery.format_error(terminal, Some(&display_names), Some(&tokens))
                     },)
                 })?;
             }
@@ -797,12 +792,7 @@ fn parse_impl(input: &str) -> Result<Cst, String> {
         .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
             format!(
                 "Finish error: {}",
-                recovery.format_error(
-                    terminal,
-                    c11::Parser::<CActions>::error_info(),
-                    Some(&display_names),
-                    Some(&tokens)
-                )
+                recovery.format_error(terminal, Some(&display_names), Some(&tokens))
             )
         })
 }
@@ -1638,7 +1628,7 @@ void f(void) {
         parser
             .finish(&mut actions)
             .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
-                recovery.format_error(terminal, expr::Parser::<Eval>::error_info(), None, None)
+                recovery.format_error(terminal, None, None)
             })
     }
 

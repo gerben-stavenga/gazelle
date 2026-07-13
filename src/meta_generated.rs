@@ -1085,34 +1085,6 @@ union __Value<A: Types> {
 pub fn symbol_name(id: gazelle::SymbolId) -> &'static str {
     __table::ERROR_INFO.symbol_names.get(id.index()).copied().unwrap_or("<?>")
 }
-/// Extract a structured, grammar-level syntax diagnosis.
-pub fn diagnose_error<E>(
-    error: &gazelle::ParseError<E, gazelle::RecoveryParser<'static>>,
-) -> Option<gazelle::SyntaxDiagnostic> {
-    match error {
-        gazelle::ParseError::Syntax { terminal, recovery } => {
-            Some(recovery.diagnose(*terminal, &__table::ERROR_INFO))
-        }
-        gazelle::ParseError::Action { .. } => None,
-    }
-}
-/// Format a syntax error using Gazelle's default English presentation.
-/// Returns `None` for user action errors.
-pub fn format_error<E>(
-    error: &gazelle::ParseError<E, gazelle::RecoveryParser<'static>>,
-    display_names: Option<&[(&str, &str)]>,
-    tokens: Option<&[&str]>,
-) -> Option<String> {
-    match error {
-        gazelle::ParseError::Syntax { terminal, recovery } => {
-            Some(
-                recovery
-                    .format_error(*terminal, &__table::ERROR_INFO, display_names, tokens),
-            )
-        }
-        gazelle::ParseError::Action { .. } => None,
-    }
-}
 /// Type-safe LR parser.
 pub struct Parser<A: Types> {
     parser: gazelle::Parser<'static>,
@@ -1130,15 +1102,6 @@ impl<A: Types> Parser<A> {
     pub fn state(&self) -> usize {
         self.parser.state()
     }
-    /// Format a parse error into a detailed message.
-    pub fn format_error(
-        &self,
-        terminal: gazelle::SymbolId,
-        display_names: Option<&[(&str, &str)]>,
-        tokens: Option<&[&str]>,
-    ) -> String {
-        self.parser.format_error(terminal, &__table::ERROR_INFO, display_names, tokens)
-    }
     /// Get the error info for custom error formatting.
     pub fn error_info() -> &'static gazelle::ErrorInfo<'static> {
         &__table::ERROR_INFO
@@ -1150,7 +1113,7 @@ impl<A: Types> Parser<A> {
             &mut self.parser,
             gazelle::Parser::new(__table::TABLE),
         );
-        parser.into_recovery()
+        parser.into_recovery(&__table::ERROR_INFO)
     }
     /// Consume this semantic parser and search for syntax repairs.
     ///

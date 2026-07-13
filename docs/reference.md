@@ -401,13 +401,16 @@ impl<A: Types + Action<Expr<A>>> Parser<A> {
     ) -> (gazelle::RecoveryParser<'static>, Vec<gazelle::RecoveryInfo>);
 }
 
-pub fn diagnose_error<E>(error: &ParseError<E, RecoveryParser<'static>>)
-    -> Option<SyntaxDiagnostic>;
-pub fn format_error<E>(
-    error: &ParseError<E, RecoveryParser<'static>>,
-    display_names: Option<&[(&str, &str)]>,
-    tokens: Option<&[&str]>,
-) -> Option<String>;
+impl RecoveryParser<'_> {
+    pub fn diagnose(&self, terminal: SymbolId) -> SyntaxDiagnostic;
+    pub fn format_error(
+        &self,
+        terminal: SymbolId,
+        display_names: Option<&[(&str, &str)]>,
+        tokens: Option<&[&str]>,
+    ) -> String;
+}
+
 pub fn symbol_name(id: SymbolId) -> &'static str;
 ```
 
@@ -468,15 +471,19 @@ fn parse(input: &str) -> Result<f64, String> {
             Token::RParen => calc::Terminal::Rparen,
         };
 
-        parser = parser.push(terminal, &mut actions).map_err(|error| {
-            calc::format_error(&error, None, None)
-                .unwrap_or_else(|| "semantic action failed".to_string())
+        parser = parser.push(terminal, &mut actions).map_err(|error| match error {
+            gazelle::ParseError::Syntax { terminal, recovery } =>
+                recovery.format_error(terminal, None, None),
+            gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
         })?;
     }
 
     parser.finish(&mut actions)
-        .map_err(|error| calc::format_error(&error, None, None)
-            .unwrap_or_else(|| "semantic action failed".to_string()))
+        .map_err(|error| match error {
+            gazelle::ParseError::Syntax { terminal, recovery } =>
+                recovery.format_error(terminal, None, None),
+            gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
+        })
 }
 ```
 
@@ -487,11 +494,13 @@ fn parse(input: &str) -> Result<f64, String> {
 match parser.push(terminal, &mut actions) {
     Ok(next_parser) => parser = next_parser,
     Err(error) => {
-        if let Some(diagnostic) = calc::diagnose_error(&error) {
-            // Inspect unexpected/expected symbols, stack spans, and LR items.
-            inspect(diagnostic);
-        }
-        let message = calc::format_error(&error, None, None);
+        let message = match &error {
+            gazelle::ParseError::Syntax { terminal, recovery } => {
+                inspect(recovery.diagnose(*terminal));
+                Some(recovery.format_error(*terminal, None, None))
+            }
+            gazelle::ParseError::Action { .. } => None,
+        };
         let mut recovery = error.into_recovery();
         let repairs = recovery.recover(&remaining_tokens);
         return Err(message.unwrap_or_else(|| "semantic action failed".into()));
@@ -502,7 +511,11 @@ match parser.push(terminal, &mut actions) {
 match parser.finish(&mut actions) {
     Ok(result) => { /* use result */ }
     Err(error) => {
-        let message = calc::format_error(&error, None, None);
+        let message = match &error {
+            gazelle::ParseError::Syntax { terminal, recovery } =>
+                Some(recovery.format_error(*terminal, None, None)),
+            gazelle::ParseError::Action { .. } => None,
+        };
         let recovery = error.into_recovery();
         return Err(message.unwrap_or_else(|| "semantic action failed".into()));
     }
@@ -691,7 +704,9 @@ loop {
 
 ### Parse errors
 
-When `push` or `finish` returns an error, the generated grammar can produce a structured diagnosis with `diagnose_error`. Its `format_error` helper is an optional default English rendering:
+When `push` or `finish` returns an error, its recovery state can produce a
+structured diagnosis. That same recovery state also provides a default English
+rendering:
 
 ```
 unexpected 'STAR', expected: NUM, LPAREN
@@ -704,22 +719,22 @@ The `•` marks the parser's position in the rule — it had seen `expr OP` and 
 Both operations consume the semantic parser. Success returns the parser; failure returns a `ParseError` that owns syntax-only recovery state:
 
 ```rust
-parser = parser.push(terminal, &mut actions).map_err(|error| {
-    calc::format_error(&error, None, None)
-        .unwrap_or_else(|| "semantic action failed".to_string())
+parser = parser.push(terminal, &mut actions).map_err(|error| match error {
+    gazelle::ParseError::Syntax { terminal, recovery } =>
+        recovery.format_error(terminal, None, None),
+    gazelle::ParseError::Action { .. } => "semantic action failed".to_string(),
 })?;
 ```
 
 The optional arguments provide display names and actual token texts for the default formatter:
 
 ```rust
-let display_names = HashMap::from([("PLUS", "+"), ("STAR", "*"), ("LPAREN", "(")]);
+let display_names = [("PLUS", "+"), ("STAR", "*"), ("LPAREN", "(")];
 let token_texts = vec!["1", "+", "*"];  // the tokens parsed so far
-let msg = calc::format_error(
-    &error,
-    Some(&display_names),
-    Some(&token_texts),
-).unwrap();
+let gazelle::ParseError::Syntax { terminal, recovery } = &error else {
+    panic!("expected a syntax error");
+};
+let msg = recovery.format_error(*terminal, Some(&display_names), Some(&token_texts));
 // unexpected '*', expected: NUM, (
 //   after: 1 +
 //   in expr: expr OP • expr
@@ -743,6 +758,10 @@ let later_errors = recovery.recover(&later_tokens);
 `RecoveryParser` deliberately has no semantic `push` or `finish` methods. It
 can continue tracking LR state and finding later syntax errors, but it cannot
 pretend to reconstruct values or undo user action side effects.
+
+The renderer adds no external dependency and requires no matching generated
+parser option. Applications with custom diagnostics can use `diagnose` and
+leave `format_error` unused so an optimizing linker can discard it.
 
 For untrusted or interactive input, bound the Dijkstra search explicitly:
 
@@ -768,11 +787,12 @@ match outcome.status {
 
 ### Structured diagnostics
 
-Diagnostics are exposed as grammar data before they are formatted. Every
-generated grammar provides `diagnose_error`:
+Diagnostics are exposed as grammar data before they are formatted. Recovery
+already carries its grammar metadata, so no separate context is required:
 
 ```rust
-if let Some(diagnostic) = calc::diagnose_error(&error) {
+if let gazelle::ParseError::Syntax { terminal, recovery } = &error {
+    let diagnostic = recovery.diagnose(*terminal);
     // Symbol IDs, not English prose.
     let unexpected = diagnostic.unexpected;
     let expected = &diagnostic.expected;
@@ -792,9 +812,9 @@ if let Some(diagnostic) = calc::diagnose_error(&error) {
 ```
 
 Applications can translate this data, convert it to an editor protocol, emit
-JSON, or apply their own ranking and presentation rules. `format_error` remains
-available as a reasonable English default, and is implemented using this same
-structured diagnosis.
+JSON, or apply their own ranking and presentation rules. When rendering is
+enabled, recovery's `format_error` remains available as a reasonable English
+default and is implemented using this same structured diagnosis.
 
 When a parse error occurs, you can call `recover` on the low-level `Parser` to find a minimum-cost repair and continue parsing. Recovery uses Dijkstra search over possible insert/delete edits to find the cheapest way to get the parser back on track.
 

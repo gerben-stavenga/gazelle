@@ -108,12 +108,7 @@ mod tests {
             .map_err(|gazelle::ParseError::Syntax { terminal, recovery }| {
                 format!(
                     "Finish error: {}",
-                    recovery.format_error(
-                        terminal,
-                        list::Parser::<Builder>::error_info(),
-                        None,
-                        None
-                    )
+                    recovery.format_error(terminal, None, None)
                 )
             })
     }

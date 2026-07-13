@@ -247,12 +247,7 @@ fn run() -> Result<(), String> {
             gazelle::ParseError::Syntax { terminal, recovery } => {
                 format!(
                     "parse error: {}",
-                    recovery.format_error(
-                        terminal,
-                        token_format::Parser::<Actions>::error_info(),
-                        None,
-                        None
-                    )
+                    recovery.format_error(terminal, None, None)
                 )
             }
             gazelle::ParseError::Action {
@@ -271,12 +266,7 @@ fn run() -> Result<(), String> {
         gazelle::ParseError::Syntax { terminal, recovery } => {
             format!(
                 "parse error at end: {}",
-                recovery.format_error(
-                    terminal,
-                    token_format::Parser::<Actions>::error_info(),
-                    None,
-                    None
-                )
+                recovery.format_error(terminal, None, None)
             )
         }
         gazelle::ParseError::Action {

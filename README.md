@@ -8,13 +8,19 @@ Add both crates to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gazelle-parser = "0.9"
-gazelle-macros = "0.9"
+gazelle-parser = "0.10"
+gazelle-macros = "0.10"
 ```
 
 `gazelle-parser` provides the runtime (parser, tokens, precedence, error handling). `gazelle-macros` provides the `gazelle!` proc macro that generates parser code from your grammar. Both are required for typical use.
 
 For runtime-only usage (dynamic grammars without the macro), `gazelle-parser` alone is sufficient — see [Parser Generator as a Library](#7-parser-generator-as-a-library).
+
+Recovery carries its grammar metadata and supports both structured `diagnose`
+and the built-in English `format_error`. The renderer adds no dependency;
+applications with custom diagnostics can leave it unused so an optimizing
+linker can discard it. See [the 0.10 migration guide](docs/migration-0.10.md)
+for diagnostic API changes.
 
 ## What Makes Gazelle Different
 
@@ -125,13 +131,15 @@ syntax-only `RecoveryParser`:
 parser = match parser.push(token, &mut actions) {
     Ok(parser) => parser,
     Err(error) => {
-        if let Some(diagnostic) = calc::diagnose_error(&error) {
-            // Grammar data: SymbolIds, token ranges, and LR rule/dot contexts.
-            report(diagnostic);
-        }
-
-        // Optional default English rendering.
-        let message = calc::format_error(&error, None, None);
+        let message = match &error {
+            gazelle::ParseError::Syntax { terminal, recovery } => {
+                // Grammar data: SymbolIds, token ranges, and LR rule/dot contexts.
+                report(recovery.diagnose(*terminal));
+                // Built-in English presentation, when desired.
+                Some(recovery.format_error(*terminal, None, None))
+            }
+            gazelle::ParseError::Action { .. } => None,
+        };
 
         // Semantic values are gone; only syntactic repair may continue.
         let mut recovery = error.into_recovery();
