@@ -40,7 +40,7 @@ reduce-states-as-transitions encoding in the LR literature; the closest
 work, Kannapinn's minimal-LR(k) construction, minimizes the completed
 canonical machine with reduce information carried as state output — and
 explicitly rejects minimizing the bare transition structure as unsound,
-which is precisely the obstacle this encoding removes (§8).
+which is precisely the obstacle this encoding removes (§9).
 
 ## 1. Introduction
 
@@ -126,17 +126,102 @@ conflict handling, and compression to state counts matching the state of
 the art. One generic automaton module, containing nothing
 parser-specific, builds gazelle's lexer and its parser both.
 
-The rest of the paper walks the pipeline. §2 develops the parenthesis
-picture into a parser driven by an oracle; §3 replaces the oracle with
-the stack-reading automaton and derives canonical LR(1); §4 treats
-conflicts as states and resolution as classification; §5 shrinks the
-table by lookahead alignment plus minimization; §6 defers precedence to
-parse time; §7 validates the state counts and conflicts against bison;
-§8 positions the construction against prior work, in particular
-Kannapinn's dissertation, the closest anticipation we know of; §9
+The rest of the paper walks the pipeline. §2 examines the conventional
+solutions — LALR, Pager, IELR — and where each goes wrong; §3 develops
+the parenthesis
+picture into a parser driven by an oracle; §4 replaces the oracle with
+the stack-reading automaton and derives canonical LR(1); §5 treats
+conflicts as states and resolution as classification; §6 shrinks the
+table by lookahead alignment plus minimization; §7 defers precedence to
+parse time; §8 validates the state counts and conflicts against bison;
+§9 positions the construction against prior work, in particular
+Kannapinn's dissertation, the closest anticipation we know of; §10
 records engineering notes.
 
-## 2. Parsing is reinserting parentheses
+## 2. Merge early, repair later: the trouble with LALR, Pager, and IELR
+
+Knuth's canonical LR(1) construction [1] settled the theory in 1965 and
+was impractical on arrival: the automaton distinguishes parser states by
+their full one-token right context, and the bookkeeping multiplies
+states. Our C++ grammar yields 5350 canonical states; a LALR table for
+the same grammar has 571. For fifty years the standard response has been
+to avoid building the canonical automaton at all and to construct a
+smaller one directly, merging states that look like they behave alike.
+Each generation of tools merges more carefully than the last, because
+each discovered a new way merging goes wrong.
+
+**LALR** [2] merges maximally: every pair of states with the same core —
+the same items, ignoring lookaheads — becomes one state, and their
+lookahead sets are unioned. This is yacc's and bison's default, and for
+most grammars it works. Its first failure mode is the famous one:
+merging can manufacture conflicts. Take the textbook grammar
+
+```
+s = A x A => axa | B x B => bxb | A y B => ayb | B y A => bya;
+x = T => x;
+y = T => y;
+```
+
+After `A T` the canonical automaton reduces `T` to `x` on lookahead `A`
+and to `y` on lookahead `B`; after `B T`, exactly the reverse. Two
+states, no conflict — the grammar is LR(1). But the two states share a
+core, so LALR merges them, the lookahead sets union, and the merged
+state can reduce `T` to either `x` or `y` on either lookahead: a
+reduce/reduce conflict that exists in no canonical state. The user wrote
+a correct grammar and is told it is broken, by a diagnostic
+("reduce/reduce conflict in state 217") that names an artifact of the
+merge. This is the inexplicable-conflict experience of §1, and it is not
+user error; it is the tool's approximation leaking.
+
+LALR's second failure mode is quieter and worse. When conflicts are
+*intended* — an ambiguous expression grammar plus precedence
+declarations — resolution runs on the merged automaton's table cells. A
+lookahead that reached a cell from one context gets resolved by a
+declaration meant for another; the parser still builds, no warning is
+issued, and its behavior on valid inputs silently differs from what the
+canonical automaton would do. Merging does not just misreport the
+grammar; it can change the language the parser accepts.
+
+**Pager's method** [3] repairs the first failure: merge two states only
+when a *weak compatibility* test proves the union cannot create a
+conflict. For LR(1) grammars this yields small conflict-free tables. But
+the merging happens during construction, so the result depends on the
+order in which states are generated — and the compatibility test asks
+only whether a conflict would appear, nothing about how it would be
+resolved. For the intentionally ambiguous grammars, the second failure
+mode survives intact.
+
+**IELR(1)** [4] confronts the second failure directly, and its
+architecture is a diagnosis of the whole family. It builds the LALR
+automaton first, then computes — by annotating lookaheads with their
+provenance and propagating the annotations across the automaton —
+exactly which merges changed an outcome of conflict resolution, and
+splits those states back apart. It is correct: the resulting parser
+behaves as the canonical one everywhere. It is the state of the art,
+implemented in bison. But look at what it took: a five-phase pipeline in
+which conflict resolution is the *final* phase, run after an
+approximation (LALR), an analysis of the approximation's damage (the
+annotations), and a repair (the splits). The machinery answers "what do
+I compute next," never "what is this object" — comprehensible only
+operationally.
+
+The family has a common root. Merging interacts with conflict
+resolution, and every tool in the family merges *before* resolving — so
+each needs machinery to predict the interaction (Pager's compatibility
+test) or to repair it (IELR's provenance analysis), and that machinery
+is what makes the tools opaque. Even then none of it is optimal: finding
+a minimal conflict-free merge of canonical states is NP-hard in general
+[5]. Gazelle inverts the order. Build the canonical automaton, whose
+behavior is right by construction; resolve conflicts there, where
+resolution is trivially faithful; only then shrink, letting a generic
+DFA minimizer merge exactly the states whose behavior came out
+identical. No prediction, no repair — merging behaviorally identical
+states cannot change behavior. The price of the inversion is that the
+parse table must become the kind of object a DFA minimizer accepts: a
+plain automaton. Building that object is the work of the next sections,
+and it starts from the parenthesis picture of §1.
+
+## 3. Parsing is reinserting parentheses
 
 Take the standard expression grammar:
 
@@ -263,13 +348,13 @@ activation owns nothing but a position: which productions are still
 candidates, and how far along their right-hand sides it stands. LL buys
 program structure by committing at the earliest possible moment; LR
 commits at the last possible moment, and what its call stack becomes is
-the subject of §3.
+the subject of §4.
 
 A truthful oracle makes `parse` correct and useless — it presupposes the
 parse. Parsing is the art of computing the announcements, and the rest of
 this paper computes LR's.
 
-## 3. The oracle's knowledge is regular
+## 4. The oracle's knowledge is regular
 
 Two mechanical rewrites of `parse` change nothing and reveal everything.
 First, demote the oracle to a guess: `choose(b)` picks *any* production of
@@ -404,7 +489,7 @@ Now make the verdict itself a state, because it earns its keep. Give every
 production one extra NFA state — its **reduce node** — and let the
 completed item step to it *on its follow-token*: one more ordinary labeled
 edge. Accept stops being special; it is the reduce node of the augmented
-`__start → expr`. The oracle-free parser is then the loop of §2 with the
+`__start → expr`. The oracle-free parser is then the loop of §3 with the
 oracle replaced by a single NFA step on the peeked token — the kind of
 state the step lands in *is* the event:
 
@@ -424,7 +509,7 @@ loop {
 
 Closing `__start` returns the finished tree; a close only peeks at the
 token, which is consumed when its turn to shift comes. For an LR(1) grammar
-exactly one branch applies at every step — the case where two apply is §4.
+exactly one branch applies at every step — the case where two apply is §5.
 
 One inefficiency remains: rescanning the whole stack after every move is
 quadratic, and wasteful in an obvious way — the scan of the untouched lower
@@ -444,7 +529,7 @@ a memoized NFA scan over a symbol stack that is no longer materialized.
 
 The item half of this NFA is the textbook construction [6, 7]. The verdict
 half — reduce nodes as ordinary states, reduce actions as ordinary edges —
-is, as far as we can tell, absent from the literature (§8; Kannapinn [13]
+is, as far as we can tell, absent from the literature (§9; Kannapinn [13]
 comes closest, and explicitly dismisses the transition-only route), and it
 is the load-bearing half: with it the transition function carries the *whole*
 parser — symbol edges for shift and goto, follow-token edges for reduce —
@@ -498,10 +583,10 @@ below `num_item_states` means shift/goto, a target at
 table.
 
 The claim that this equals Knuth's construction is checked empirically in
-§7: distinct item sets match `bison -Dlr.type=canonical-lr` state-for-state
+§8: distinct item sets match `bison -Dlr.type=canonical-lr` state-for-state
 on all five test grammars.
 
-## 4. The residual oracle: conflicts are states
+## 5. The residual oracle: conflicts are states
 
 For grammars that are not LR(1), the oracle is not fully eliminated: at
 some points the machine, even peeking at the next token, still has more
@@ -512,7 +597,7 @@ The DFA is deterministic by construction — one transition per
 lands in the *target state*. If some item in state S shifts terminal `a`
 and some completed item in S delivers its verdict on follow-token `a`, subset
 construction builds a single transition on `a` to a **hybrid** target:
-{advanced items} ∪ {reduce nodes} — a state on which both arms of §3's
+{advanced items} ∪ {reduce nodes} — a state on which both arms of §4's
 loop match. A reduce/reduce conflict is a target containing two reduce
 nodes. A conflict is not a table cell gone wrong; it
 is a local, inspectable state — the state is literally *the set of answers
@@ -543,40 +628,28 @@ same items as some pure state elsewhere in the automaton, so the raw DFA
 carries a duplicate physical state per conflicted transition. It is
 self-healing: reduce nodes are sinks and classification declares the hybrid
 an item state, so after resolution the hybrid and its pure twin have
-identical behavior and the minimizer (§5) merges them. The only place the
+identical behavior and the minimizer (§6) merges them. The only place the
 duplicates are ever visible is in raw conflict counts, which can exceed
-bison's per-(state, token) counts (§7).
+bison's per-(state, token) counts (§8).
 
 Because a conflict is a state of a live automaton, generating a *witness*
 for one — an input prefix reaching it, and completions showing the two runs
 the machine cannot tell apart — is a graph search over δ rather than a
 separate theory; that machinery is described elsewhere [9].
 
-## 5. Small tables: align, then minimize
+## 6. Small tables: align, then minimize
 
 Canonical LR(1) for our C++ grammar has 5350 item sets; bison's LALR table
 for the same grammar has 571 states (discounting bison's synthetic
-`$accept` state, as in §7 throughout). Closing that gap is a fifty-year
-literature, and nearly all its answers share one shape — build fewer states
-by merging the ones that "probably" behave alike:
-
-- **LALR** [2] merges every pair of states with the same LR(0) core and
-  unions their lookahead sets. Usually fine; occasionally it manufactures a
-  reduce/reduce conflict the canonical automaton doesn't have, and the
-  grammar is rejected for no user-visible reason.
-- **Pager's method** [3] merges lazily under a "weak compatibility" test,
-  entangled with construction order.
-- **IELR(1)** [4] starts from LALR, detects states where merging changed
-  the *outcome of conflict resolution*, and splits exactly those back. This
-  is the state of the art, implemented in Bison — and its motivation is
-  telling: merging and resolution interact, and repairing the interaction
-  requires tracking where every lookahead came from.
-- In the general formulation — find a minimal merge of canonical states
-  that introduces no conflicts — the problem is NP-hard [5].
-- The one exception to the merge-during-construction shape is Kannapinn
-  [13], who minimizes the *completed* canonical LR(k) machine by partition
-  refinement — but with reduce information as state annotations rather
-  than transitions, and only for conflict-free grammars (§8).
+`$accept` state, as in §8 throughout). §2 described the standard way to
+close that gap — merge during construction, then predict or repair the
+interaction with conflict resolution — and what that machinery costs.
+Two boundary markers frame the design space: finding a minimal
+conflict-free merge of canonical states is NP-hard in its general
+formulation [5], and the one post-hoc construction in the literature,
+Kannapinn's [13], minimizes the completed canonical machine by partition
+refinement but carries reduce information as state annotations rather
+than transitions, and handles only conflict-free grammars (§9).
 
 Gazelle closes the gap with two observations and no new algorithm.
 
@@ -658,7 +731,7 @@ split survives — not because an inadequacy detector found it, but because
 partition refinement cannot do otherwise. No lookahead provenance, no
 annotation propagation, no repair phase. This is an argument that the two
 criteria coincide, not a machine-checked equivalence of the resulting
-tables; what §7 verifies is that the state counts coincide exactly,
+tables; what §8 verifies is that the state counts coincide exactly,
 including the hard case.
 
 This also explains why the NP-hardness of optimal LR(1) merging [5] is not
@@ -670,7 +743,7 @@ behavior-preserving merge, which is unique and cheap. The price is
 philosophical, not practical: we minimize behavior after fixing a
 resolution policy, rather than minimizing over all conflict-free tables.
 
-## 6. Runtime precedence: consulting the oracle at parse time
+## 7. Runtime precedence: consulting the oracle at parse time
 
 Expression grammars are the one place conflicts are not bugs but language
 definition: `expr = expr OP expr` is ambiguous until precedence and
@@ -713,7 +786,7 @@ automaton is parsing statements, declarations, and types, and shunting-yard
 behavior switches on exactly at the `ShiftOrReduce` entries.
 
 One stage, though, must know about the twins: alignment. The gap-filling
-argument of §5 rests on an invariant — a state with no transition on a
+argument of §6 rests on an invariant — a state with no transition on a
 symbol can never see that symbol on valid input, so filling the gap with a
 spurious reduce is unobservable. Virtual twins break the invariant: a state
 can lack the *virtual* reduce edge while shifting the *real* token, because
@@ -723,7 +796,7 @@ a state where canonical LR(1) has no question to defer, and the token's
 precedence can then drive the parser off a valid input. The guard is one
 condition: never fill a virtual reduce edge into a state that has a
 transition on its real twin. It is not free — on the C11 grammar (with its
-`prec` operators; the §7 comparison strips them, so no virtual symbols
+`prec` operators; the §8 comparison strips them, so no virtual symbols
 exist there) the guard keeps 36 states apart that unguarded filling would
 have merged — but every one of those merges was only reachable by
 contaminating a genuinely unconditional shift context with another
@@ -741,7 +814,7 @@ One rule, one table entry, fifteen precedence levels, user-defined
 operators. The C11 grammar drops from a fifteen-nonterminal precedence
 ladder to a single rule.
 
-## 7. Validation against Bison
+## 8. Validation against Bison
 
 Claims of "exactly canonical LR(1)" and "exactly IELR-sized" should not
 rest on inspection. Gazelle has a `--yacc` mode that emits a grammar as a
@@ -765,7 +838,7 @@ LR(1) item sets match bison's canonical states exactly:
 
 Conflicts match as well: C11 shows 128 shift/reduce and 3 reduce/reduce in
 both tools, Python 1755 S/R, regex 3 S/R, meta none. The C++ grammar
-exposes the hybrid-state artifact from §4: gazelle's raw count is 3182 S/R
+exposes the hybrid-state artifact from §5: gazelle's raw count is 3182 S/R
 against bison's 2893, and deduplicating gazelle's by (item set, token)
 yields exactly 2893 — the surplus is duplicate physical states, not extra
 conflicts.
@@ -791,7 +864,7 @@ straightforward future work.) The 5350 → 601 compression on C++, an 8.9×
 reduction landing precisely on the IELR optimum, is the paper's claim in
 one number.
 
-## 8. Related work
+## 9. Related work
 
 The item-NFA view of LR construction is folklore-old and well documented
 [6, 7]: LR(1) states are the subset construction of an NFA over items, with
@@ -832,13 +905,13 @@ gazelle's. Heilbrunner's automaton-theoretic treatment of LR theory via
 item grammars and parsing automata [11] is the tradition this paper works
 in; it, too, keeps reduce actions out of the transition relation. Yang [5]
 shows the general minimal-conflict-free-merge problem is NP-hard, which
-locates the difficulty gazelle sidesteps (§5). Zimmerman's langcc [12]
+locates the difficulty gazelle sidesteps (§6). Zimmerman's langcc [12]
 represents the other contemporary full-LR(1) effort; it deliberately avoids
 constructing the canonical automaton, attacking table size with grammar
 transformations (CPS) and construction-time follow-set partitioning rather
 than post-hoc minimization — the approaches compose rather than compete.
 
-## 9. Engineering notes
+## 10. Engineering notes
 
 The factorization is visible in the module sizes. `automaton.rs` — Nfa,
 Dfa, subset construction, partition-refinement minimization, plus a
@@ -856,7 +929,7 @@ The C++ grammar, the largest we have, builds in ~6 seconds including
 counterexample generation for its ~3000 intentional conflicts; the
 automaton pipeline itself is a small fraction of that.
 
-## 10. Conclusion
+## 11. Conclusion
 
 Choose the representation in which your hardest problem is a solved one.
 Presenting parsing as reinserting elided parentheses — and LR as placing
