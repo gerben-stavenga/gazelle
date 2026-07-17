@@ -69,65 +69,83 @@ hand someone an algorithm you can explain. This paper is that
 explanation. It presents LR parsing as gazelle implements it, and the
 whole construction grows out of one concrete picture, so we start there.
 
-Write a parse tree directly into the token stream by putting labeled
-parentheses around each production. For the input `1 + 2`, parsed as an
-addition of two numbers, that looks like:
+The picture states parsing as a self-contained algorithmic task. A parse
+tree is just the token stream with labeled parentheses written into it,
+one pair per production. For the input `1 + 2`, parsed as an addition of
+two numbers:
 
 ```
 (add (num 1 )num + (num 2 )num )add
 ```
 
-Erase the parentheses and you get the input back. So a parser's job is
-exactly to reinsert them. Half of that job is free: the label on an
-opening parenthesis determines its closing one and vice versa, so
-reconstructing either side alone is enough. And the choice of side is
-precisely the split between the two great parser families. To write the
-*opening* parenthesis `(add`, a parser must name the production at its
-first token, before seeing any of the body; that is LL, and it is why
-left recursion kills recursive descent. To write the *closing*
-parenthesis `)add`, a parser may wait until the production's last token,
-with the entire body already seen; that is LR. LR is the more powerful
-method for the most ordinary of reasons: it makes the same decision
-later, with more information in hand.
+Erasing the parentheses gives back the input. Parsing is the inverse:
+given a plain stream of tokens, reinsert the parentheses.
 
-Section 2 develops this picture carefully. Section 3 then takes the one
-question LR parsing leaves open — *which production just ended?* — and
-shows that a finite automaton reading the parse stack can answer it.
-Determinizing that automaton is Knuth's canonical LR(1) construction: the
-familiar item sets appear as a consequence, not a definition. Along the
-way we make one encoding choice that we have not found in the literature.
-When a production ends, our automaton takes an ordinary labeled
-transition into a small extra state that names the production. In other
-words, reduce actions are transitions too, not annotations bolted onto
-states. The choice costs one extra state per grammar rule, and it makes
-the finished parse table — shifts, gotos, and reduces together — the
-transition function of a single DFA.
+Half of that job is free: the label on an opening parenthesis determines
+its closing one and vice versa, so reconstructing either side alone is
+enough. And the choice of side is precisely the split between the two
+great parser families. To write the *opening* parenthesis `(add`, a
+parser must name the production at its first token, before seeing any of
+the body; that is LL, and it is why left recursion kills recursive
+descent. To write the *closing* parenthesis `)add`, a parser may wait
+until the production's last token, with the entire body already seen;
+that is LR. LR is the more powerful method for the most ordinary of
+reasons: it makes the same decision later, with more information in
+hand.
 
-That choice is the paper's hinge, because problems that are hard for
-parse tables are old, solved problems for DFAs:
+So the LR question is: where can a closing parenthesis go? The
+remarkable answer, due to Knuth [1], is that the knowledge required is
+*regular*: the stacks from which a parse can still succeed — the viable
+prefixes — form a regular language, so a plain finite automaton, no
+stack of its own, can read the parse stack and answer "which production
+can end here?". Determinizing that automaton is exactly the canonical
+LR(1) construction. The framing also localizes failure: a grammar is
+LR(1) when every placement question has a unique answer after one token
+of lookahead, and a *conflict* is nothing more than a placement question
+that stays ambiguous.
 
-- A conflict stops being a corrupted table cell. It is a reachable state
-  of the DFA, and resolving conflicts is one classifying pass over the
-  states (§4).
-- Shrinking the table stops being LR-specific theory. After a 40-line
-  pass that aligns lookaheads, ordinary DFA minimization compresses
-  canonical LR(1) down to IELR-sized tables (§5).
-- Operator precedence stops touching the pipeline at all. A symbol
-  renaming before construction, undone after it, produces a table that
-  defers the shift-or-reduce choice to precedence data carried by the
-  token at parse time (§6).
+Conflicts are usually presented as defects in the grammar. Often they
+are the opposite: the ambiguous grammar is the cleaner and more
+understandable formulation. `expr = expr OP expr` says what an
+expression is far more directly than the unambiguous precedence ladder
+it must be rewritten into, and the dangling else is simplest stated
+ambiguously with "else binds to the nearest if" said once, out loud.
+The ambiguity is real, but it belongs to the language definition, not to
+a grammar bug — and a parser generator should support saying it that
+way.
 
-The same 300-line automaton module, containing nothing parser-specific,
-builds gazelle's lexer and its parser.
+What stands between canonical LR(1) and practice is two problems. The
+tables are huge: our C++ grammar produces 5350 canonical states where
+LALR's tables have 571. And real grammars have conflicts. The
+conventional tooling attacks both with special-purpose machinery. LALR
+merges states wholesale by core, and occasionally manufactures conflicts
+the grammar does not have. Pager merges more carefully during
+construction. IELR starts from LALR and splits back the states where
+merging corrupted conflict resolution. Yacc resolves operator conflicts
+statically, freezing each conflicted table cell to shift or to reduce at
+generation time. Gazelle replaces all of this with generic automaton
+algorithms, enabled by one encoding decision: reduce actions are
+ordinary labeled transitions to per-rule reduce states, which makes the
+entire parse table — shifts, gotos, and reduces — the transition
+function of a single DFA. Conflict resolution then runs as a
+classification of states on the uncontaminated canonical automaton;
+table compression is ordinary DFA minimization, and lands exactly on
+bison's IELR(1) state counts on all five grammars we test against it,
+including C++; operator precedence survives the pipeline as data on the
+token and is resolved at parse time, which is what lets `expr = expr OP
+expr` stay one rule with user-defined operators for free. The same
+300-line automaton module, containing nothing parser-specific, builds
+gazelle's lexer and its parser.
 
-We verify all of this against GNU Bison (§7). On five grammars — C++,
-C11, Python, and gazelle's own regex and meta grammars — the raw
-automaton reproduces bison's canonical LR(1) states and conflicts
-exactly, and the minimized automaton reproduces bison's IELR(1) state
-counts exactly, including the 30 extra states IELR splits on the C++
-grammar, the case that justifies IELR's existence. Section 8 compares
-against prior work, in particular Kannapinn's dissertation, the closest
-anticipation we know of; §9 records engineering notes.
+The rest of the paper walks the pipeline. §2 develops the parenthesis
+picture into a parser driven by an oracle; §3 replaces the oracle with
+the stack-reading automaton and derives canonical LR(1); §4 treats
+conflicts as states and resolution as classification; §5 shrinks the
+table by lookahead alignment plus minimization; §6 defers precedence to
+parse time; §7 validates the state counts and conflicts against bison;
+§8 positions the construction against prior work, in particular
+Kannapinn's dissertation, the closest anticipation we know of; §9
+records engineering notes.
 
 ## 2. Parsing is reinserting parentheses
 
