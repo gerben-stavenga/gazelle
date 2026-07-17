@@ -44,15 +44,19 @@ which is precisely the obstacle this encoding removes (§8).
 
 ## 1. Introduction
 
-Every compiler course teaches LR parsing the same way. There is an action
-table and a goto table. A procedure fills them in. If a cell ends up
-holding two actions, that is a "conflict", and further procedures decide
-which action wins. The method works, and has worked for sixty years [1],
-but at no point does it tell you what the parser *is*. The machinery
-built on top inherits the opacity: LALR merges states by a heuristic,
-IELR un-merges the ones the heuristic broke, and yacc's precedence
-declarations overwrite individual cells. Each is a patch on a data
-structure that was never explained in the first place.
+In theory, parsing was settled sixty years ago: LR is the most powerful
+deterministic method there is — linear time, one token of lookahead,
+every deterministic context-free language [1]. In practice, nearly every
+production compiler ships a hand-written recursive-descent parser, the
+textbook's *weaker* method. Anyone who has tried the classic tools knows
+why. There is the extra build step. There is the grammar file, with
+semantic actions spliced in as quoted code in a foreign syntax. There is
+the inversion of control: the generated parser owns the main loop and
+calls you, on its schedule, with its 1970s API. And above all there are
+the conflicts: when the tool rejects a grammar, it reports the failure in
+terms of its own internals — "shift/reduce conflict in state 217" — and
+with LALR the conflict may not even be the grammar's fault, but an
+artifact of a merging heuristic the user was never told existed.
 
 This paper explains LR parsing the way gazelle, our parser generator,
 implements it. The whole construction grows out of one concrete picture,
