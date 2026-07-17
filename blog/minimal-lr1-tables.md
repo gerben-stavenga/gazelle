@@ -58,9 +58,16 @@ terms of its own internals — "shift/reduce conflict in state 217" — and
 with LALR the conflict may not even be the grammar's fault, but an
 artifact of a merging heuristic the user was never told existed.
 
-This paper explains LR parsing the way gazelle, our parser generator,
-implements it. The whole construction grows out of one concrete picture,
-so we start there.
+Gazelle, our parser generator, was written against this list. Its design
+philosophy is to expose the algorithms rather than to wrap them: the
+pieces of LR parsing — construction, conflict analysis, table
+compression — should be components a user can understand, pick up, and
+compose into a solution for the task they actually have, not a framework
+that solves a predetermined task that is never quite the one at hand.
+Such a philosophy stands or falls with comprehensibility: you can only
+hand someone an algorithm you can explain. This paper is that
+explanation. It presents LR parsing as gazelle implements it, and the
+whole construction grows out of one concrete picture, so we start there.
 
 Write a parse tree directly into the token stream by putting labeled
 parentheses around each production. For the input `1 + 2`, parsed as an
