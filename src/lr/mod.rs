@@ -865,7 +865,13 @@ pub(crate) struct AutomatonResult {
 /// transitions from siblings to fill gaps. This makes same-core states
 /// identical (when they don't conflict), so Hopcroft merges them — achieving
 /// LALR-style minimization.
-fn merge_lookaheads(dfa: &mut Dfa, states: &[DfaStateKind]) {
+///
+/// Filled edges are safe only where the token cannot arrive on valid input.
+/// For a virtual reduce symbol that guarantee requires the state to have no
+/// transition on the real twin: with one present, the token does arrive, and
+/// the filled edge would turn an unconditional shift into a runtime
+/// precedence decision the canonical automaton never makes.
+fn merge_lookaheads(dfa: &mut Dfa, states: &[DfaStateKind], reduce_to_real: &BTreeMap<u32, u32>) {
     // Group internal states by core: sorted (rule, dot) pairs
     let mut core_groups: BTreeMap<Vec<(usize, usize)>, Vec<usize>> = BTreeMap::new();
     for (state, kind) in states.iter().enumerate() {
@@ -906,6 +912,9 @@ fn merge_lookaheads(dfa: &mut Dfa, states: &[DfaStateKind]) {
             for (&sym, &target) in &sym_to_target {
                 if let Some(target) = target
                     && !existing.contains(&sym)
+                    && reduce_to_real
+                        .get(&sym)
+                        .is_none_or(|real| !existing.contains(real))
                 {
                     dfa.transitions[state].push((sym, target));
                 }
@@ -935,7 +944,7 @@ pub(crate) fn build_minimal_automaton_with_limits(
         counterexample_limits,
     );
     let resolved = resolve_conflicts(dfa_lr_info, &nfa_info);
-    merge_lookaheads(&mut raw_dfa, &resolved);
+    merge_lookaheads(&mut raw_dfa, &resolved, &nfa_info.reduce_to_real);
 
     // Initial partition for Hopcroft: reduce states grouped by rule,
     // all item states in one partition. (Reduce states are leaves — Hopcroft
@@ -1134,13 +1143,18 @@ mod tests {
 
     #[test]
     fn print_state_counts() {
+        // C11 exceeds its LALR count: same-core states whose prec (virtual)
+        // reduce edges differ must stay split, because merging them would
+        // add runtime precedence decisions the canonical automaton doesn't
+        // make. Python and Meta don't use prec terminals outside recursive
+        // expression positions, so every same-core group still merges.
         let grammars = [
-            ("C11", "grammars/c11.gzl"),
-            ("Python", "grammars/python.gzl"),
-            ("Meta", "grammars/meta.gzl"),
+            ("C11", "grammars/c11.gzl", Some(36)),
+            ("Python", "grammars/python.gzl", Some(0)),
+            ("Meta", "grammars/meta.gzl", Some(0)),
         ];
 
-        for (name, path) in grammars {
+        for (name, path, extra) in grammars {
             let src = std::fs::read_to_string(path).unwrap();
             let grammar = to_grammar_internal(&parse_grammar(&src).unwrap()).unwrap();
             let (min_lr, lalr, rr, sr) = grammar_stats(&grammar);
@@ -1152,8 +1166,9 @@ mod tests {
                 rr,
                 sr
             );
-            // LALR grammars: minimal LR must equal LALR
-            assert_eq!(min_lr, lalr, "{} should have same state count", name);
+            if let Some(extra) = extra {
+                assert_eq!(min_lr, lalr + extra, "{} state count", name);
+            }
         }
 
         // C11 has known conflicts (one per (state, terminal) pair)
