@@ -80,6 +80,12 @@ fn alignment_does_not_leak_prec_reduces_across_contexts() {
         ]
     };
 
-    assert!(accepts(CONTROL, &build(CONTROL)), "control grammar rejects its own sentence");
-    assert!(accepts(WITNESS, &build(WITNESS)), "unrelated rule s2 changed the parse of an s1 sentence");
+    assert!(
+        accepts(CONTROL, &build(CONTROL)),
+        "control grammar rejects its own sentence"
+    );
+    assert!(
+        accepts(WITNESS, &build(WITNESS)),
+        "unrelated rule s2 changed the parse of an s1 sentence"
+    );
 }
