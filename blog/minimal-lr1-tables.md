@@ -114,28 +114,17 @@ The ambiguity is real, but it belongs to the language definition, not to
 a grammar bug — and a parser generator should support saying it that
 way.
 
-What stands between canonical LR(1) and practice is two problems. The
-tables are huge: our C++ grammar produces 5350 canonical states where
-LALR's tables have 571. And real grammars have conflicts. The
-conventional tooling attacks both with special-purpose machinery. LALR
-merges states wholesale by core, and occasionally manufactures conflicts
-the grammar does not have. Pager merges more carefully during
-construction. IELR starts from LALR and splits back the states where
-merging corrupted conflict resolution. Yacc resolves operator conflicts
-statically, freezing each conflicted table cell to shift or to reduce at
-generation time. Gazelle replaces all of this with generic automaton
-algorithms, enabled by one encoding decision: reduce actions are
-ordinary labeled transitions to per-rule reduce states, which makes the
-entire parse table — shifts, gotos, and reduces — the transition
-function of a single DFA. Conflict resolution then runs as a
-classification of states on the uncontaminated canonical automaton;
-table compression is ordinary DFA minimization, and lands exactly on
-bison's IELR(1) state counts on all five grammars we test against it,
-including C++; operator precedence survives the pipeline as data on the
-token and is resolved at parse time, which is what lets `expr = expr OP
-expr` stay one rule with user-defined operators for free. The same
-300-line automaton module, containing nothing parser-specific, builds
-gazelle's lexer and its parser.
+Between canonical LR(1) and a usable tool stand two practical problems:
+the canonical tables are far too large to ship, and real grammars have
+conflicts. Sixty years of tooling answers both with special-purpose
+machinery — merging heuristics, repair phases, precedence decisions
+frozen into the table at generation time. Gazelle's contrast, and this
+paper's subject, is that no special-purpose machinery is needed: encoded
+the right way, the whole parse table is a single ordinary DFA, and the
+textbook automaton algorithms do all the work — construction,
+conflict handling, and compression to state counts matching the state of
+the art. One generic automaton module, containing nothing
+parser-specific, builds gazelle's lexer and its parser both.
 
 The rest of the paper walks the pipeline. §2 develops the parenthesis
 picture into a parser driven by an oracle; §3 replaces the oracle with
