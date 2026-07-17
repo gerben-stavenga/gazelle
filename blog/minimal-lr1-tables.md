@@ -44,34 +44,55 @@ which is precisely the obstacle this encoding removes (§8).
 
 ## 1. Introduction
 
-LR parsing has a reputation problem. It is the most powerful deterministic
-parsing method — linear time, one token of lookahead, every deterministic
-context-free language [1] — and sixty years on it is still routinely taught
-as a recipe for filling in two inscrutable tables. The machinery around it
-inherits the opacity: LALR's merging heuristics, IELR's repair phase, yacc's
-precedence declarations are each a patch applied to a data structure that
-hides what the parser actually is.
+LR parsing is the most powerful deterministic parsing method: linear
+time, one token of lookahead, every deterministic context-free language
+[1]. It is also, sixty years on, still taught as a recipe for filling in
+two inscrutable tables. The machinery around it inherits the opacity:
+LALR's merging heuristics, IELR's repair phase, and yacc's precedence
+declarations are each a patch applied to a data structure that hides what
+the parser actually is.
 
-This paper builds LR(1) the way gazelle implements it, from one idea: a
-parse tree is a token stream with parentheses, and parsing is reinserting
-the parentheses the input leaves out. Every parenthesis the machine cannot
-place from local evidence is a question to an **oracle**; LR parsing is
-what remains after the oracle is eliminated by determinization. The
-questions that survive elimination are *conflicts* —
-and once the machine is encoded so that its every action, including reduce,
-is a transition of one DFA, those questions become first-class values:
-inspectable states, resolvable by classification, answerable at parse time
-by data on the token, and — crucially — invisible to the generic algorithms
-that compress the automaton to practical size.
+This paper presents LR(1) parsing as gazelle, our parser generator,
+implements it. The starting point is a plain observation: a parse tree is
+the token stream with one pair of labeled parentheses per production
+instance, and the input is that stream with the parentheses deleted.
+Parsing is the job of putting them back. A parser that reconstructs the
+*opening* parentheses must commit to a production at its first token —
+that is LL. A parser that reconstructs the *closing* ones commits at the
+last token, with the whole body in view — that is LR. Section 2 develops
+this picture; everything else follows from it and one encoding decision.
 
-Section 2 presents parsing as parenthesis reinsertion, with LR as placing
-the closing ones; §3 shows the knowledge needed to place them is regular —
-an NFA reading the stack — and determinizes the oracle away, arriving at
-canonical LR(1) as bare subset construction; §4 treats conflicts
-as the oracle's residue; §5 compresses the automaton to IELR-exact size with
-ordinary DFA minimization; §6 defers precedence conflicts to parse time; §7
-validates all of it against GNU Bison; §8 and §9 cover related work and
-engineering notes.
+The encoding decision: **reduce actions are transitions.** Give every
+production its own reduce state in the automaton, and let a completed item
+step to it on its lookahead token, as an ordinary labeled edge. Nothing
+else changes — but now the entire parse table, shifts and reductions
+alike, is the transition function of a single DFA, and standard automata
+algorithms apply to the whole parser rather than only to its shift half:
+
+- Canonical LR(1) construction is the subset construction over an NFA of
+  items (§3).
+- A conflict is not a table cell gone wrong; it is a reachable state of
+  the DFA, and conflict resolution is a one-pass classification of states
+  (§4).
+- Table compression is ordinary DFA minimization, run after a 40-line
+  lookahead-alignment pass — and it reproduces IELR-sized tables with no
+  inadequacy analysis (§5).
+- Operator precedence is a symbol renaming applied before the pipeline
+  and undone after it; the resulting table defers the shift-or-reduce
+  choice to precedence data on the token, at parse time (§6).
+
+The same generic automaton module — under 300 lines — builds both the
+lexer and the parser.
+
+These claims are checked against GNU Bison (§7). On five grammars (C++,
+C11, Python, and gazelle's regex and meta grammars), the raw automaton
+reproduces bison's canonical LR(1) states and conflict counts exactly, and
+the minimized automaton reproduces bison's IELR(1) state counts exactly —
+including the 30 states IELR splits beyond LALR on the C++ grammar, the
+case that separates IELR from its predecessors. §8 positions the
+construction against prior work, in particular Kannapinn's minimal-LR(k)
+dissertation, the closest anticipation we know of; §9 records engineering
+notes.
 
 ## 2. Parsing is reinserting parentheses
 
