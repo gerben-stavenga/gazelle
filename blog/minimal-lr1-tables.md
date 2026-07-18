@@ -547,19 +547,29 @@ the actual next token licenses it, so this machine never does provably
 futile work. Hold that thought for §6, where table compression
 deliberately sells fragments of that precision back.
 
-One inefficiency remains: rescanning the whole stack after every move is
-quadratic, and wasteful in an obvious way — the scan of the untouched lower
-stack cannot change. So cache it: alongside each stack symbol, store the
-DFA state — the item set — the scan reaches at that point. A shift
-computes the new top state in one DFA step; a reduce `B → γ` pops `|γ|`
-symbols together with their cached states, exposing — still valid, never
-recomputed — the state from before γ was matched, and pushes `B` with its
-one-step update: the classical *goto*. The reachable item sets are
-precisely the canonical LR(1) states, and at this point the grammar
-symbols themselves are dead weight — every decision reads only the cached
-states — so the textbook parser stops storing them. The loop keeps its
-shape; `scan` has become a lookup. The mysterious "stack of LR states" is
-a memoized NFA scan over a symbol stack that is no longer materialized.
+The scan's result deserves a better status than "computed on demand."
+The DFA state reached after reading a prefix of the stack is not a
+by-product of an optimization; it is the precise annotation of *where
+the parse stands* at that depth — the set of positions the guessing
+parser could occupy, which is everything the future can ever need to
+know about the symbols beneath. So annotate: store, alongside each
+stack symbol, the DFA state the scan reaches there. Each cell now
+carries its own resumption point, the role a return address plays on a
+call stack — the position the machine comes back to once everything
+above that cell has been closed. A shift computes the new top state in
+one DFA step. A reduce `B → γ` pops `|γ|` cells, and the annotation
+exposed underneath is exactly the position to resume from — still
+valid, never recomputed — advanced one step on `B`: the classical
+*goto*. The reachable item sets are precisely the canonical LR(1)
+states, and at this point the grammar symbols themselves are dead
+weight — every decision reads only the annotations — so the textbook
+parser stops storing them. (The annotation also happens to remove the
+loop's one inefficiency, the quadratic rescanning of a lower stack that
+cannot change; but that is a bonus, not the reason.) The loop keeps its
+shape; `scan` has become a lookup. The "stack of LR states" was never
+mysterious: each entry says where the parse stands after the symbols
+beneath it, and the parser is a machine that keeps that annotation
+current.
 
 ### Reduce actions as transitions
 
