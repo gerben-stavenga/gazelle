@@ -485,13 +485,36 @@ option list is a singleton everywhere — shift, or one specific reduce — are
 exactly **LR(1)**: the oracle replaced by a regular scan and one token of
 peek.
 
-Now make the verdict itself a state, because it earns its keep. Give every
-production one extra NFA state — its **reduce node** — and let the
-completed item step to it *on its follow-token*: one more ordinary labeled
-edge. Accept stops being special; it is the reduce node of the augmented
-`__start → expr`. The oracle-free parser is then the loop of §3 with the
-oracle replaced by a single NFA step on the peeked token — the kind of
-state the step lands in *is* the event:
+Before wiring the peek in, ask *when* a reduction happens. A close
+consumes no input, so the nondeterministic machine may fire it the
+instant the completing token is shifted — at the end of the current
+loop iteration, no peek involved. Completed item equals reduction. As
+an automaton move that immediate close is an ε-edge, and subset
+construction swallows ε-edges: the reduction survives only as an
+annotation on the state — "this set contains `B → γ •`, so reducing
+`B → γ` is on offer here." Every textbook parse table is exactly this
+encoding, reduce actions as annotations, and annotations are invisible
+to generic automaton algorithms.
+
+So reschedule the close: hold it back past the peek, to the start of
+the next iteration. Semantically nothing changes — the close still
+consumes nothing — but now a token is in hand when the reduction fires,
+and the deferred ε-move is promoted to an ordinary lettered edge. Give
+every production one extra NFA state, its **reduce node**, and let the
+completed item step to it *on the peeked token*:
+
+```
+B → γ •   --t-->   reduce node of B → γ
+```
+
+The letter on that edge is a free slot, and it is where the lookahead
+filter installs. Label the edge with every token and the machine is
+LR(0); with FOLLOW(B), SLR(1); with the path-precise follow-token
+computed above, canonical LR(1). The delay creates the slot; the filter
+fills it. Accept stops being special — it is the reduce node of the
+augmented `__start → expr`. The oracle-free parser is then the loop of
+§3 with the oracle replaced by a single NFA step on the peeked token —
+the kind of state the step lands in *is* the event:
 
 ```rust
 loop {
@@ -507,9 +530,22 @@ loop {
 }
 ```
 
-Closing `__start` returns the finished tree; a close only peeks at the
-token, which is consumed when its turn to shift comes. For an LR(1) grammar
-exactly one branch applies at every step — the case where two apply is §5.
+Closing `__start` returns the finished tree. A close only peeks; the
+token is consumed when a step finally lands in a non-reduce state and
+its turn to shift comes. Cascades of closes therefore need no special
+case: after the first `NUM` of `NUM PLUS NUM`, one peek at `PLUS`
+licenses `)num`, then `)term`, before `PLUS` shifts — the same
+still-unconsumed token gating each reduce edge in turn. For an LR(1)
+grammar exactly one branch applies at every step — the case where two
+apply is §5.
+
+The delayed schedule is also where canonical LR(1)'s *immediate error
+detection* comes from. A machine that reduces on completion alone —
+LR(0)'s schedule — happily performs closes that are already doomed and
+discovers the error a few steps later; a reduce edge fires only when
+the actual next token licenses it, so this machine never does provably
+futile work. Hold that thought for §6, where table compression
+deliberately sells fragments of that precision back.
 
 One inefficiency remains: rescanning the whole stack after every move is
 quadratic, and wasteful in an obvious way — the scan of the untouched lower
@@ -530,7 +566,9 @@ a memoized NFA scan over a symbol stack that is no longer materialized.
 The item half of this NFA is the textbook construction [6, 7]. The verdict
 half — reduce nodes as ordinary states, reduce actions as ordinary edges —
 is, as far as we can tell, absent from the literature (§9; Kannapinn [13]
-comes closest, and explicitly dismisses the transition-only route), and it
+comes closest: his machine carries reduce information as Moore-style
+state output, which is the immediate-schedule encoding above, and he
+explicitly dismisses minimizing the bare transition structure), and it
 is the load-bearing half: with it the transition function carries the *whole*
 parser — symbol edges for shift and goto, follow-token edges for reduce —
 and every algorithm that speaks DFA can from here on speak parser.
