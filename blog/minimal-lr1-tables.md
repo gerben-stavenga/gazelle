@@ -770,9 +770,14 @@ on all five test grammars.
 
 ## 5. The residual oracle: conflicts are states
 
-For grammars that are not LR(1), the oracle is not fully eliminated: at
-some points the machine, even with the pipe token in hand, still has more
-than one proposed action. Where do those points live in the automaton?
+§4 left one loose end, deliberately. Control flow is common to every
+world *except at CLOSE* — whether one fires, and for which rule — and
+the loop rotation funneled every such disagreement into a single
+visible place: the state a step lands in. For an LR(1) grammar the
+landing state always speaks with one voice — an item state, or one
+reduce node. For any other grammar, the residual oracle lives in
+exactly the landing states that still carry two answers. What do those
+look like?
 
 The DFA is deterministic by construction — one transition per
 (state, symbol). So a shift/reduce conflict cannot be a clash of edges; it
