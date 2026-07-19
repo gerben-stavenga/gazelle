@@ -128,9 +128,9 @@ parser-specific, builds gazelle's lexer and its parser both.
 
 The rest of the paper walks the pipeline. §2 examines the conventional
 solutions — LALR, Pager, IELR — and where each goes wrong; §3 develops
-the parenthesis
-picture into a parser driven by an oracle; §4 replaces the oracle with
-the stack-reading automaton and derives canonical LR(1); §5 treats
+the parenthesis picture into the parsing task and its one oracle
+question; §4 builds the parse loop — an item stack driven by an NFA —
+and determinizes it into canonical LR(1); §5 treats
 conflicts as states and resolution as classification; §6 shrinks the
 table by lookahead alignment plus minimization; §7 defers precedence to
 parse time; §8 validates the state counts and conflicts against bison;
@@ -308,94 +308,74 @@ Not that placement is always obvious. In the trace above, after the second
 `)num` the stack reads `expr PLUS term`, and *two* productions have their
 right-hand side on top: `)add` (correct) and `)term` — a trap, leaving
 `expr PLUS expr`, a stack no production ever closes; the parse is dead and
-doesn't know it yet. So hand the parser an **oracle** that answers the one
-question the input no longer does: *which production of `b` comes next?*
-With it, parsing is a single recursive function — nothing but the tree
-walk:
+doesn't know it yet. What deleting the parentheses took away is the answer
+to exactly one question: *which production, here?* Call whatever answers
+it the **oracle**. An LL parser must consult the oracle at every `(r`,
+before the body — and answers it by peeking a token or two ahead:
+dispatch on the peek is recursive descent, and every parser written by
+hand is exactly this. An LR parser consults the oracle only at each
+`)r`, the whole body in view — a strictly later deadline, with strictly
+more evidence. LL buys program structure by committing at the earliest
+possible moment; LR commits at the last possible moment, and pays by
+needing a machine where LL needed only a function call. Building that
+machine — and replacing its oracle with computation — is the next
+section.
+
+## 4. The parse loop: an NFA driving a stack
+
+The machine is built from one part. A **dotted production**, or *item* —
+a `(rule, dot)` pair — marks a position inside a production: the item
+`expr → expr • PLUS term` reads "parsing an `add`; the left operand is
+finished; `PLUS` must come next." An item is the entire control state
+of one parsing hypothesis, and it has three possible moves — the three
+edge kinds of an NFA whose states are items:
+
+```
+ADVANCE   (r, dot) --X-->  (r, dot+1)   the dot steps over X = rhs(r)[dot]:
+                                        a token, or a nonterminal delivered
+                                        by a CLOSE below
+DESCEND   (r, dot) --ε-->  (b, 0)       rhs(r)[dot] is a nonterminal: enter
+                                        a guessed production of it — silent
+CLOSE     (r, end)                      complete: emit ")r"; lhs(r) is
+                                        delivered to the suspended item
+                                        below, which ADVANCEs over it
+```
+
+A parse in progress is a stack of hypotheses — the **item stack** — top
+item active, every item beneath suspended mid-production, plus a value
+stack of finished trees. The fundamental parse loop applies one move
+per iteration to the top of the item stack:
 
 ```rust
-fn parse(r: Production, stack: &mut Vec<Tree>) {
-    emit_open(r);                              // "(r" — the LL announcement
-    for sym in rhs(r) {
-        match sym {
-            Terminal(t)    => stack.push(Tree::Leaf(expect(t))),
-            NonTerminal(b) => parse(oracle(b), stack),
+let mut items = vec![Item { rule: START, dot: 0 }];   // the item stack
+let mut trees = Vec::new();                            // the value stack
+
+loop {
+    let Item { rule, dot } = *items.last().unwrap();
+    if dot == rhs_len(rule) {
+        // CLOSE — ")rule": pop the item, deliver lhs(rule) to the parent.
+        let children = trees.split_off(trees.len() - rhs_len(rule));
+        trees.push(Tree::Node(rule, children));
+        items.pop();
+        match items.last_mut() {
+            Some(parent) => parent.dot += 1,     // the parent's ADVANCE, on lhs(rule)
+            None => return trees.pop(),          // __start closed: the parse
+        }
+    } else {
+        match rhs(rule)[dot] {
+            // ADVANCE — the dot steps over the arriving token.
+            Terminal(t) => {
+                trees.push(Tree::Leaf(expect(t)));
+                items.last_mut().unwrap().dot += 1;
+            }
+            // DESCEND — push a guessed production of b.
+            NonTerminal(b) => items.push(Item { rule: choose(b), dot: 0 }),
         }
     }
-    emit_close(r);                             // ")r" — the LR announcement
-    let children = stack.split_off(stack.len() - rhs_len(r));
-    stack.push(Tree::Node(r, children));
 }
 ```
 
-Note what is passed in: the *production*, not the nonterminal — choosing
-between productions is the oracle's job, done at the call site. And note
-where the data lives: not in locals, but on one stack threaded through the
-recursion. A token is pushed as it is read, and the close collects the
-production's children off the top — the same `push` and `split_off` as the
-reader's loop above. The recursion owns no data at all; the call structure
-exists only to know `r` and to place the announcements. And since one side
-of each parenthesis pair is redundant, the parser owes the world only one
-of the two `emit`s. Which one defines the family: announce at entry,
-before a single token of the body has been read — **LL**; announce at
-exit, the entire body in hand — **LR**. Same function, same walk, same
-stack, opposite ends.
-
-"Replacing the oracle with computation" now carries a precise deadline:
-each `oracle(b)` answer must be *derived* by the time it is announced. An
-LL parser derives it at the production's first token, peeking at most k
-ahead — `oracle(b)` becomes a dispatch on the peek, the function becomes
-recursive descent, and every parser written by hand is exactly this. The
-asymmetry from before reads straight off the code: for the left-recursive
-`expr`, the entry announcement — `(add` or `(term`? — is underivable from
-any finite peek, while the exit announcement falls due only after the
-whole body: a later deadline, with all the evidence in.
-
-But look at what LR's deferral does to the function. Mid-parse, *no active
-call knows its own argument yet*: every activation on the call stack is
-`parse(r)` for an `r` that will only be derived when that activation ends.
-The recursion is real, but its arguments are IOUs — it cannot be run
-top-down as written. And since the data all sits on the shared stack, an
-activation owns nothing but a position: which productions are still
-candidates, and how far along their right-hand sides it stands. LL buys
-program structure by committing at the earliest possible moment; LR
-commits at the last possible moment, and what its call stack becomes is
-the subject of §4.
-
-A truthful oracle makes `parse` correct and useless — it presupposes the
-parse. Parsing is the art of computing the announcements, and the rest of
-this paper computes LR's.
-
-## 4. The oracle's knowledge is regular
-
-Two mechanical rewrites of `parse` change nothing and reveal everything.
-First, demote the oracle to a guess: `choose(b)` picks *any* production of
-`b`, forking the run into one world per pick, and wrong worlds simply
-die — `expect` fails, or input is left over. The input is valid iff some
-world survives; clairvoyance traded for nondeterminism. Second, dissolve
-the for loop into the recursion by moving its index into the parameters:
-
-```rust
-fn parse(r: Production, dot: usize, stack: &mut Vec<Tree>) {
-    if dot == rhs_len(r) {
-        let children = stack.split_off(stack.len() - dot);    // ")r" — close
-        stack.push(Tree::Node(r, children));
-        return;
-    }
-    match rhs(r)[dot] {
-        Terminal(t)    => stack.push(Tree::Leaf(expect(t))),  // push what arrives
-        NonTerminal(b) => parse(choose(b), 0, stack),         // descend on a guess
-    }
-    parse(r, dot + 1, stack)                                  // advance
-}
-```
-
-The parameter pair `(r, dot)` — a production and a position inside it —
-is a **dotted production**, or *item*, and it is the entire control state
-of the parse. The item `expr → expr • PLUS term` reads: "parsing an
-`add`; the left operand is on the stack; `PLUS` must come next." The call
-stack is a stack of items, each suspended at its dot. In the world that
-survives `NUM PLUS NUM`, the run looks like this:
+In the world that survives `NUM PLUS NUM`, the run looks like this:
 
 ```
 [__start → •expr]                                  descend: add    (guess)
@@ -411,60 +391,133 @@ survives `NUM PLUS NUM`, the run looks like this:
 [__start → expr•]                                  accept
 ```
 
-Two things are visible in this form that the for loop hid.
+Two properties are visible in this form. **There is exactly one
+decision**: whether CLOSE fires, and with which production. Everything
+else is dictated — ADVANCE is forced by what arrives, and a DESCEND's
+guess (`choose`, the machine's only nondeterminism) is *silent*: it
+consumes nothing, emits nothing, and is not used until that item's own
+CLOSE fires. **And only CLOSE reads the rule in earnest** — the arity
+to pop, the label to emit. The oracle question of §3 now has an exact
+address: it is the CLOSE branch, and nothing else.
 
-**There is exactly one decision.** Whether the first branch fires — end
-the loop, the production is complete, emit `)r`. That is the entire
-decision content of LR parsing; everything else in the function is
-bookkeeping.
+Two reshapings put this machine into its final form. Both change
+bookkeeping only; neither touches what is computed.
 
-**The not-complete path is state independent.** What it does is dictated
-by what arrives: a token arrives and is pushed; a subtree is delivered by
-an inner close and the dot steps over it. The parameters are consulted
-only as a check — `rhs(r)[dot]` says what *may* arrive — never as a
-choice; on valid input, every candidate item does the same pushing and
-advancing. Only the complete branch reads `r` in earnest: the arity to
-pop, the label to emit. Even a descent is anonymous while it lasts —
-`parse(choose(b), 0, …)` makes a guess, but the guess is silent (no input
-consumed, no parenthesis emitted) and is not *used* until the child's own
-complete branch fires.
+**First reshaping: drive the loop by the token.** Package the two
+stacks as a state machine whose single operation is `push(t)`: per
+token, a burst of input-free moves — DESCENDs and CLOSEs — then exactly
+one consuming move:
 
-Now the NFA can be read straight off the code. One world's control state
-is the pair `(r, dot)`, drawn from a finite set, and the three branches
-change it in exactly three ways:
-
+```rust
+impl Parser {                       // state: items, trees
+    fn push(&mut self, t: Token) -> Result<Step, SyntaxError> {
+        loop {
+            let Item { rule, dot } = *self.items.last().unwrap();
+            if dot == rhs_len(rule) {
+                /* CLOSE — exactly as above; input-free.       */
+                /* closing __start returns Step::Done(tree).   */
+            } else {
+                match rhs(rule)[dot] {
+                    // DESCEND — input-free.
+                    NonTerminal(b) => self.items.push(Item { rule: choose(b), dot: 0 }),
+                    // ADVANCE — the one consuming move: shift t.
+                    Terminal(k) if t.kind == k => {
+                        self.trees.push(Tree::Leaf(t));
+                        self.items.last_mut().unwrap().dot += 1;
+                        return Ok(Step::More);
+                    }
+                    Terminal(_) => return Err(SyntaxError),
+                }
+            }
+        }
+    }
+}
 ```
-(r, dot) --X-->  (r, dot+1)    advance: the dot steps over X = rhs(r)[dot] —
-                               a token, or a subtree delivered by a close
-(r, dot) --ε-->  (b', 0)       descend: a guessed production of b — silent
-(r, end)  close                return: the parent's dot steps over lhs(r) —
-                               an ordinary advance, on a nonterminal
+
+The caller owns the loop — the inversion of control complained about in
+§1 is resolved by the formulation itself, and this function is
+gazelle's shipped API (`parser.push(token)`) in miniature. Note what
+`t` is during the burst: already read, not yet shifted — in hand. This
+machine never peeks, here or later; a token that has arrived but not
+committed is a pipe of length one between stream and stack. EOF is a
+token like any other — the final closes fire in its presence, `__start`
+pops, accept is nothing special. And a failed `push(t)` means exactly
+that no surviving world can consume `t`: the earliest point at which
+failure is knowable.
+
+**Second reshaping: make every move a table lookup.** Change the stack
+discipline: ADVANCE *pushes* its successor instead of mutating in
+place — one item cell per committed symbol, exactly parallel to the
+value stack — and DESCEND dissolves into the lookup itself: a
+transition first follows ε-edges (silently, on a guess) to an item
+whose dot faces the symbol, then advances over it. Every move is now
+one primitive, `nfa_transition(state, symbol)`, where a symbol is a
+terminal from the pipe or the nonterminal a close just produced:
+
+```rust
+// One symbol step, after silently guessed ε-descends: follow ε-edges to
+// an item whose dot faces `sym`, then advance over it.
+fn nfa_transition(state: ItemState, sym: Symbol) -> Option<ItemState>;
+
+impl Parser {                       // items: one cell per committed symbol
+    fn push(&mut self, t: Token) -> Result<Step, SyntaxError> {
+        loop {
+            let top = *self.items.last().unwrap();
+            if let Some(rule) = completed(top) {
+                // CLOSE — strip the body, then step over the produced symbol.
+                let n = rhs_len(rule);
+                let children = self.trees.split_off(self.trees.len() - n);
+                self.trees.push(Tree::Node(rule, children));
+                self.items.truncate(self.items.len() - n);
+                if rule == START { return Ok(Step::Done(self.trees.pop().unwrap())); }
+                match nfa_transition(*self.items.last().unwrap(), lhs(rule).into()) {
+                    Some(next) => self.items.push(next),
+                    None => return Err(SyntaxError),
+                }
+            } else {
+                // SHIFT — the same step, on the pipe's token.
+                match nfa_transition(top, t.into()) {
+                    Some(next) => {
+                        self.items.push(next);
+                        self.trees.push(Tree::Leaf(t));
+                        return Ok(Step::More);
+                    }
+                    None => return Err(SyntaxError),
+                }
+            }
+        }
+    }
+}
 ```
 
-Finite control, symbol-labeled steps, silent guessed steps: the parser
-*is* a **nondeterministic finite automaton** driving a stack. The
-recursion holds no data (the trees are on the shared stack) and makes no
-choices beyond the guesses; all it remembers is which items to resume.
+CLOSE strips the production's body — `len(rule)` cells off both
+stacks — and takes one ordinary transition on the produced symbol from
+the newly exposed cell; SHIFT is the identical operation on the pipe's
+token. Two branches, one primitive, and the item stack now mirrors the
+value stack cell for cell.
 
-Running a nondeterministic machine means running all its worlds — naively
-exponential, but the two observations above collapse it. Until a close
-fires, every world does the same pushing and advancing, so the worlds
-march through the input together; all a world privately owns is its item
-and its suspended items. The item ranges over a finite set — carry the
-set. And the suspended items are recoverable from what all worlds share:
-descents consume nothing, so every symbol any dot ever passed is on the
-data stack, and a candidate configuration is exactly a way of
-*re-reading* that stack from `__start → •expr` — the configuration
-`[__start → •expr │ expr → expr PLUS •term │ term → •NUM]` is the NFA
-path that reads `expr`, then `PLUS`, descending twice on the way. So one
-scan carries every world: run the NFA over the data stack, bottom to top,
-all paths at once, keeping the set of reachable items after each symbol.
-The nondeterminism is swallowed by the sets — each set is a *function* of
-the one before it — so the set-to-set machine is deterministic: the
-**subset construction**, a DFA whose states are sets of items. (This is
-Knuth's foundational observation [1]: the stacks from which a parse can
-still succeed — the *viable prefixes* — form a regular language.)
-Scanning `expr PLUS NUM`:
+**Why this machine determinizes.** Look at where the nondeterminism
+ended up: entirely inside `nfa_transition`. A wrong guess is a state
+path that dies — never a different stack motion. The NFA is hiding the
+backtracking: no world ever rewinds the stack or the input; a world
+fails by its state path going dead, and most steps change *state*, not
+*control*. What is pushed, how many cells strip, when the token
+commits — all of it is common across worlds, with a single exception:
+the CLOSE branch, whether the top is complete and with which rule.
+Every disagreement between worlds is funneled into that one visible
+place. This is the property that makes the next move legal — a stack
+machine cannot be determinized in general.
+
+So carry all the worlds at once: let each cell of the item stack hold
+the *set* of items the worlds could occupy there. The set version of
+`nfa_transition` — the union over members, ε-edges and all — is a plain
+function from set to set: no guess survives it, and the reachable sets
+are finitely many. This is the **subset construction**, and the sets it
+builds are exactly the canonical LR(1) item sets. (It is also Knuth's
+foundational observation [1]: the stacks from which a parse can still
+succeed — the *viable prefixes* — form a regular language, and a cell's
+set is that language's state after the symbols beneath.) The cells
+after committing `expr PLUS NUM`:
 
 ```
 { __start → •expr, expr → •expr PLUS term, expr → •term, term → •NUM, … }
@@ -473,36 +526,36 @@ Scanning `expr PLUS NUM`:
    --NUM-->   { term → NUM• }
 ```
 
-A close `)r` for `B → γ` is viable exactly when the scan reaches the
-completed item `B → γ •`: the symbol edges traversed last put γ on top of
-the stack, and the epsilon edge that entered `B → • γ` came from a
+A close `)r` for `B → γ` is viable exactly when the top cell contains
+the completed item `B → γ •`: the symbol steps that reached it put γ on
+top of the stack, and the ε-edge that entered `B → • γ` came from a
 suspended parent whose dot stands before `B` — the two conditions of a
-correct close, established by one reachability question. Call a reachable
-completed item a **verdict**. Here there is one: `)num`, the unique viable
-move. Scan the trap
-stack `expr PLUS expr` instead and the third step has no edge on `expr` —
-the set goes empty; nothing is viable, which is exactly what "dead" means,
-detected by a regular scan.
+correct close, established by membership in one set. Call a completed
+item in the top cell a **verdict**. Here there is one: `)num`, the
+unique viable move. Build the cells for the trap stack `expr PLUS expr`
+instead and the third transition has no edge on `expr` — the set goes
+empty; nothing is viable, which is exactly what "dead" means, detected
+by a table lookup.
 
-The option list is not always a singleton: in the second set above,
+The verdict list is not always a singleton: in the second set above,
 `__start → expr•` is a verdict too, and it competes with shifting `PLUS`.
-The tie-breaker is one token of peek, pushed *into* the NFA: annotate every
+The tie-breaker is the pipe's token, pushed *into* the NFA: annotate every
 item with a **follow-token**, the token that must arrive after its
 production. The epsilon edge from `A → α • B β` with follow-token `t`
 spawns `B → • γ` with follow-tokens drawn from FIRST(β·t) — whatever can
 actually follow this particular `B`. A completed item then delivers its
-verdict only when the next input token is its follow-token. Item plus
+verdict only when the pipe holds its follow-token. Item plus
 follow-token is the classical LR(1) item; grammars for which the refined
-option list is a singleton everywhere — shift, or one specific reduce — are
-exactly **LR(1)**: the oracle replaced by a regular scan and one token of
-peek.
+verdict list is a singleton everywhere — shift, or one specific reduce — are
+exactly **LR(1)**: the oracle replaced by a table lookup and the one
+token in the pipe.
 
 Two boundary lines keep these claims honest. Knuth's regularity is
 unconditional — it holds for every context-free grammar, ambiguous ones
 included — but it is a statement about the *past* only: everything the
 consumed input can contribute to any parsing decision fits, lossless,
 in one DFA state. And it promises possibility, never uniqueness. The
-scan delivers the exact set of viable verdicts; whether that set
+top cell holds the exact set of viable verdicts; whether that set
 collapses to one is a question about the *future* — does evidence
 within one token settle it? — and LR(1)-ness is exactly the property
 that it always does. Neither regularity nor unambiguity implies it:
@@ -514,9 +567,9 @@ y = C => y;
 list = D list => more | D => done;
 ```
 
-After reading `C`, the scan reports — with complete precision — that
-either `x → C` or `y → C` ends here, and the token that decides, `A` or
-`B`, sits beyond arbitrarily many `D`s. The grammar is unambiguous; its
+After committing `C`, the top cell reports — with complete precision —
+that either `x → C` or `y → C` ends here, and the token that decides,
+`A` or `B`, sits beyond arbitrarily many `D`s. The grammar is unambiguous; its
 language is even regular; no lookahead k rescues it. The past is fully
 summarized — the future is simply out of reach. (Knuth also proved the
 language-level consolation: every deterministic language has *some*
@@ -526,28 +579,23 @@ what we came for.) And when even unbounded lookahead would leave two
 whole parses of one input standing, the grammar is ambiguous, and the
 residual choice is the subject of §5.
 
-Before wiring the lookahead in, ask *when* a reduction happens. A close
-consumes no input, so the nondeterministic machine may fire it the
-instant the completing token is shifted — at the end of the current
-loop iteration, no peek involved. Completed item equals reduction. As
-an automaton move that immediate close is an ε-edge, and subset
-construction swallows ε-edges: the reduction survives only as an
+Before wiring the follow-tokens in, look at *when* the machine above
+reduces. Its CLOSE branch fires on `completed(top)` — consulted before
+the pipe token is so much as looked at. A close consumes no input, so
+this is legal: completed item equals reduction, immediately. But as an
+automaton move an input-free close is an ε-edge, and subset
+construction swallows ε-edges: the reduction would survive only as an
 annotation on the state — "this set contains `B → γ •`, so reducing
 `B → γ` is on offer here." Every textbook parse table is exactly this
 encoding, reduce actions as annotations, and annotations are invisible
 to generic automaton algorithms.
 
-So reschedule the close: hold it back until the next token has
-arrived. Semantically nothing changes — the close still consumes
-nothing — but the machine now has evidence in hand when the reduction
-fires. Note that no peeking is involved, no reaching into the stream's
-future: the token has been read and simply not yet shifted — a pipe of
-length one sitting between stream and stack. (This is also gazelle's
-push API in miniature: the caller hands over a token, pending closes
-fire against it, then it shifts — the parser never pulls.) The
-deferred ε-move is thereby promoted to an ordinary lettered edge: give
-every production one extra NFA state, its **reduce node**, and let the
-completed item step to it on the pipe's content:
+So gate the close on the pipe: fire it only when the token in hand —
+already read, not yet committed — licenses it. Semantically nothing
+changes; the close still consumes nothing. But the deferred ε-move is
+thereby promoted to an ordinary lettered edge: give every production
+one extra NFA state, its **reduce node**, and let the completed item
+step to it on the pipe's content:
 
 ```
 B → γ •   --t-->   reduce node of B → γ
@@ -568,32 +616,53 @@ SLR(1); by the path-precise follow-token computed above, canonical
 LR(1); by k tokens — a pipe of length k, one more dot per token —
 LR(k), with no change anywhere else in the pipeline. The delay creates
 the slot; the filter fills it. Accept stops being special — it is the
-reduce node of the augmented `__start → expr`. The oracle-free parser
-is then the loop of §3 with the oracle replaced by a single NFA step on
-the pipe token — the kind of state the step lands in *is* the event:
+reduce node of the augmented `__start → expr`.
+
+The compiled parser is now the second reshaping's function with its two
+open ends closed by the construction: `nfa_transition` becomes
+`TRANSITION`, the subset machine's total, deterministic table — and the
+close's trigger, `completed(top)`, becomes *the transition on the pipe
+token landing in a reduce state*, since that is exactly what the
+extended dot turned a completion into. The kind of state a step lands
+in *is* the event:
 
 ```rust
-loop {
-    let live = scan(&stack);            // NFA states, reading the stack
-    let next = step(&live, peek());     // one more step, on the lookahead
-    if let Some(r) = next.reduce_node() {
-        close(r);                       // ")r": pop rhs_len(r), push Node(r)
-    } else if !next.is_empty() {
-        shift();                        // push Leaf(tokens.next())
-    } else {
-        return Err(SyntaxError);
+impl Parser {                       // states: one DFA state per committed symbol
+    fn push(&mut self, t: Token) -> Result<Step, SyntaxError> {
+        loop {
+            match TRANSITION[*self.states.last().unwrap()][t.kind] {
+                Target::Reduce(rule) => {
+                    // CLOSE — ")rule", licensed by the pipe token.
+                    let n = rhs_len(rule);
+                    let children = self.trees.split_off(self.trees.len() - n);
+                    self.trees.push(Tree::Node(rule, children));
+                    self.states.truncate(self.states.len() - n);
+                    if rule == START { return Ok(Step::Done(self.trees.pop().unwrap())); }
+                    let next = TRANSITION[*self.states.last().unwrap()][lhs(rule)];
+                    self.states.push(next.unwrap_item());   // goto: the same step, on lhs
+                }
+                Target::Item(next) => {
+                    // SHIFT — commit the pipe token.
+                    self.states.push(next);
+                    self.trees.push(Tree::Leaf(t));
+                    return Ok(Step::More);
+                }
+                Target::Error => return Err(SyntaxError),
+            }
+        }
     }
 }
 ```
 
-Closing `__start` returns the finished tree. A close only peeks; the
-token is consumed when a step finally lands in a non-reduce state and
-its turn to shift comes. Cascades of closes therefore need no special
-case: after the first `NUM` of `NUM PLUS NUM`, one peek at `PLUS`
-licenses `)num`, then `)term`, before `PLUS` shifts — the same
-still-unconsumed token gating each reduce edge in turn. For an LR(1)
-grammar exactly one branch applies at every step — the case where two
-apply is §5.
+Line for line, this is the second reshaping's loop — same control flow,
+same stack motions — with the state type widened from item to item set
+and the guessing gone from the lookup. A close never touches the pipe;
+the token stays in hand across an entire cascade — after the first
+`NUM` of `NUM PLUS NUM`, the one token `PLUS` licenses `)num`, then
+`)term`, before it finally commits — and each close's goto is an
+ordinary transition on the produced nonterminal from the cell the strip
+exposes. For an LR(1) grammar exactly one arm matches at every step —
+the case where two could is §5.
 
 The delayed schedule is also where canonical LR(1)'s *immediate error
 detection* comes from. A machine that reduces on completion alone —
@@ -603,29 +672,19 @@ the actual next token licenses it, so this machine never does provably
 futile work. Hold that thought for §6, where table compression
 deliberately sells fragments of that precision back.
 
-The scan's result deserves a better status than "computed on demand."
-The DFA state reached after reading a prefix of the stack is not a
-by-product of an optimization; it is the precise annotation of *where
-the parse stands* at that depth — the set of positions the guessing
-parser could occupy, which is everything the future can ever need to
-know about the symbols beneath. So annotate: store, alongside each
-stack symbol, the DFA state the scan reaches there. Each cell now
-carries its own resumption point, the role a return address plays on a
-call stack — the position the machine comes back to once everything
-above that cell has been closed. A shift computes the new top state in
-one DFA step. A reduce `B → γ` pops `|γ|` cells, and the annotation
-exposed underneath is exactly the position to resume from — still
-valid, never recomputed — advanced one step on `B`: the classical
-*goto*. The reachable item sets are precisely the canonical LR(1)
-states, and at this point the grammar symbols themselves are dead
-weight — every decision reads only the annotations — so the textbook
-parser stops storing them. (The annotation also happens to remove the
-loop's one inefficiency, the quadratic rescanning of a lower stack that
-cannot change; but that is a bonus, not the reason.) The loop keeps its
-shape; `scan` has become a lookup. The "stack of LR states" was never
-mysterious: each entry says where the parse stands after the symbols
-beneath it, and the parser is a machine that keeps that annotation
-current.
+And note what the cells are. Each one is the precise annotation of
+*where the parse stands* after the symbols beneath it — the set of
+positions the guessing machine could occupy, which is everything the
+future can ever need to know about those symbols. The cell a close
+exposes is the resumption point, the role a return address plays on a
+call stack: the position the machine comes back to once everything
+above it has closed — still valid, never recomputed, because a cell is
+a function of the symbols below it and a close touches none of them.
+The grammar symbols themselves are never stored — every decision reads
+only the cells — which is why the textbook parser doesn't store them
+either. The "stack of LR states" was never mysterious: it is this
+section's first item stack, determinized cell by cell, and the parser
+is a machine that keeps the annotation current.
 
 ### Reduce actions as transitions
 
@@ -695,7 +754,7 @@ on all five test grammars.
 ## 5. The residual oracle: conflicts are states
 
 For grammars that are not LR(1), the oracle is not fully eliminated: at
-some points the machine, even peeking at the next token, still has more
+some points the machine, even with the pipe token in hand, still has more
 than one proposed action. Where do those points live in the automaton?
 
 The DFA is deterministic by construction — one transition per
