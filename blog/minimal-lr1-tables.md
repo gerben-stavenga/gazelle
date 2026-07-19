@@ -537,8 +537,17 @@ instead and the third transition has no edge on `expr` — the set goes
 empty; nothing is viable, which is exactly what "dead" means, detected
 by a table lookup.
 
-The verdict list is not always a singleton: in the second set above,
-`__start → expr•` is a verdict too, and it competes with shifting `PLUS`.
+Name what has just been built. These sets are the classical **LR(0)
+item sets**, and the set-to-set table is the LR(0) automaton: the
+direct determinization of the bare item NFA, no lookahead anywhere in
+the machine. Grammars for which it never faces a choice — every
+reachable top cell holding either a single verdict and no viable shift,
+or no verdict at all — are exactly the **LR(0)** grammars. The class is
+real but cramped, and the run above already shows why: in its second
+cell, `__start → expr•` is a verdict *and* `PLUS` is shiftable — an
+LR(0) shift/reduce conflict. The expression grammar itself is out of
+reach.
+
 The tie-breaker is the pipe's token, pushed *into* the NFA: annotate every
 item with a **follow-token**, the token that must arrive after its
 production. The epsilon edge from `A → α • B β` with follow-token `t`
