@@ -237,6 +237,18 @@ A parse tree is a token stream with parentheses. Write the tree for
 (add (term (num NUM )num )term PLUS (num NUM )num )add
 ```
 
+The parentheses are the point. A grammar does more than carve a set of
+valid strings out of the set of all token streams: it assigns each
+valid stream a structure, and the labels on the parentheses — `add`,
+`num` — are where semantics attach; they name the tree's constructors.
+Two grammars can accept exactly the same strings and parenthesize them
+differently: same language, different interpretation. "Parsing a
+language" is in this sense a loose phrase. One parses with a *grammar*,
+because what the rest of the compiler consumes is the grammar's
+interpretation of the input, not the fact of its validity — so a
+parsing method is useful only if it accepts the grammar whose
+parentheses you mean, not merely some grammar for the same strings.
+
 If input arrived in this form, parsing would be trivial — normal code, ten
 lines, one stack:
 
@@ -484,6 +496,35 @@ follow-token is the classical LR(1) item; grammars for which the refined
 option list is a singleton everywhere — shift, or one specific reduce — are
 exactly **LR(1)**: the oracle replaced by a regular scan and one token of
 peek.
+
+Two boundary lines keep these claims honest. Knuth's regularity is
+unconditional — it holds for every context-free grammar, ambiguous ones
+included — but it is a statement about the *past* only: everything the
+consumed input can contribute to any parsing decision fits, lossless,
+in one DFA state. And it promises possibility, never uniqueness. The
+scan delivers the exact set of viable verdicts; whether that set
+collapses to one is a question about the *future* — does evidence
+within one token settle it? — and LR(1)-ness is exactly the property
+that it always does. Neither regularity nor unambiguity implies it:
+
+```
+s = x list A => sa | y list B => sb;
+x = C => x;
+y = C => y;
+list = D list => more | D => done;
+```
+
+After reading `C`, the scan reports — with complete precision — that
+either `x → C` or `y → C` ends here, and the token that decides, `A` or
+`B`, sits beyond arbitrarily many `D`s. The grammar is unambiguous; its
+language is even regular; no lookahead k rescues it. The past is fully
+summarized — the future is simply out of reach. (Knuth also proved the
+language-level consolation: every deterministic language has *some*
+LR(1) grammar [1]. §3 says why it consoles less than it seems: a
+rewritten grammar parenthesizes differently, and the parentheses are
+what we came for.) And when even unbounded lookahead would leave two
+whole parses of one input standing, the grammar is ambiguous, and the
+residual choice is the subject of §5.
 
 Before wiring the peek in, ask *when* a reduction happens. A close
 consumes no input, so the nondeterministic machine may fire it the
