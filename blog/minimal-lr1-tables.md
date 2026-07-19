@@ -588,23 +588,29 @@ what we came for.) And when even unbounded lookahead would leave two
 whole parses of one input standing, the grammar is ambiguous, and the
 residual choice is the subject of §5.
 
-Before wiring the follow-tokens in, look at *when* the machine above
-reduces. Its CLOSE branch fires on `completed(top)` — consulted before
-the pipe token is so much as looked at. A close consumes no input, so
-this is legal: completed item equals reduction, immediately. But as an
-automaton move an input-free close is an ε-edge, and subset
-construction swallows ε-edges: the reduction would survive only as an
+Wiring them in is a *loop rotation* — and the rotation is the entire
+distance from LR(0) to LR(1). Look at where the loop above asks its
+question: at the top of each iteration, on the pre-step state —
+`completed(top)`, consulted before the pipe token is so much as looked
+at. That is the LR(0) schedule: close immediately upon completion. As
+an automaton move such an input-free close is an ε-edge, and subset
+construction swallows ε-edges: the reduction survives only as an
 annotation on the state — "this set contains `B → γ •`, so reducing
 `B → γ` is on offer here." Every textbook parse table is exactly this
 encoding, reduce actions as annotations, and annotations are invisible
 to generic automaton algorithms.
 
-So gate the close on the pipe: fire it only when the token in hand —
-already read, not yet committed — licenses it. Semantically nothing
-changes; the close still consumes nothing. But the deferred ε-move is
-thereby promoted to an ordinary lettered edge: give every production
+Now rotate: move the dispatch from before the step to after it. Each
+iteration takes one transition first — on the pipe's token, or on a
+just-produced nonterminal — and branches on *where it lands*. Nothing
+computed changes; what moves is the close decision, across the arrival
+of exactly one token, so that the machine decides with evidence in
+hand. This is what "one token of lookahead" *means*, operationally.
+But the rotated dispatch needs a landing state to find — completion
+must be somewhere a lettered step can arrive. So give every production
 one extra NFA state, its **reduce node**, and let the completed item
-step to it on the pipe's content:
+step to it on the pipe's content — an ordinary lettered edge, labeled
+by precisely the follow-tokens computed above:
 
 ```
 B → γ •   --t-->   reduce node of B → γ
@@ -616,24 +622,26 @@ follow-token `t` — is an ordinary dotted position in the extended
 production `B → γ t`; the edge above is not a new kind of transition
 but the same dot-advance as every other edge, stepping over the
 appended symbol; and the reduce node is the dot falling off the
-extended end. The machine has exactly one operation, advance the dot —
+extended end — a *completed extended item*. One node per rule suffices:
+the completed positions differ only in which follow-token was stepped
+over, and after the close the machine needs only the rule — arity and
+label. The machine has exactly one operation, advance the dot —
 positions inside γ step over committed stack symbols, appended
 positions step over pipe content. The appended position is also a free
 slot, and it is where the lookahead filter installs. Extend every
 production by a wildcard token and the machine is LR(0); by FOLLOW(B),
 SLR(1); by the path-precise follow-token computed above, canonical
 LR(1); by k tokens — a pipe of length k, one more dot per token —
-LR(k), with no change anywhere else in the pipeline. The delay creates
-the slot; the filter fills it. Accept stops being special — it is the
-reduce node of the augmented `__start → expr`.
+LR(k), with no change anywhere else in the pipeline. The rotation
+creates the slot; the filter fills it. Accept stops being special — it
+is the reduce node of the augmented `__start → expr`.
 
 The compiled parser is now the second reshaping's function with its two
 open ends closed by the construction: `nfa_transition` becomes
 `TRANSITION`, the subset machine's total, deterministic table — and the
 close's trigger, `completed(top)`, becomes *the transition on the pipe
-token landing in a reduce state*, since that is exactly what the
-extended dot turned a completion into. The kind of state a step lands
-in *is* the event:
+token landing in a reduce state* — the loop rotation, compiled. The
+kind of state a step lands in *is* the event:
 
 ```rust
 impl Parser {                       // states: one DFA state per committed symbol
@@ -673,7 +681,7 @@ ordinary transition on the produced nonterminal from the cell the strip
 exposes. For an LR(1) grammar exactly one arm matches at every step —
 the case where two could is §5.
 
-The delayed schedule is also where canonical LR(1)'s *immediate error
+The rotated schedule is also where canonical LR(1)'s *immediate error
 detection* comes from. A machine that reduces on completion alone —
 LR(0)'s schedule — happily performs closes that are already doomed and
 discovers the error a few steps later; a reduce edge fires only when
