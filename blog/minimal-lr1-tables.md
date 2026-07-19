@@ -526,7 +526,7 @@ what we came for.) And when even unbounded lookahead would leave two
 whole parses of one input standing, the grammar is ambiguous, and the
 residual choice is the subject of §5.
 
-Before wiring the peek in, ask *when* a reduction happens. A close
+Before wiring the lookahead in, ask *when* a reduction happens. A close
 consumes no input, so the nondeterministic machine may fire it the
 instant the completing token is shifted — at the end of the current
 loop iteration, no peek involved. Completed item equals reduction. As
@@ -537,25 +537,40 @@ annotation on the state — "this set contains `B → γ •`, so reducing
 encoding, reduce actions as annotations, and annotations are invisible
 to generic automaton algorithms.
 
-So reschedule the close: hold it back past the peek, to the start of
-the next iteration. Semantically nothing changes — the close still
-consumes nothing — but now a token is in hand when the reduction fires,
-and the deferred ε-move is promoted to an ordinary lettered edge. Give
+So reschedule the close: hold it back until the next token has
+arrived. Semantically nothing changes — the close still consumes
+nothing — but the machine now has evidence in hand when the reduction
+fires. Note that no peeking is involved, no reaching into the stream's
+future: the token has been read and simply not yet shifted — a pipe of
+length one sitting between stream and stack. (This is also gazelle's
+push API in miniature: the caller hands over a token, pending closes
+fire against it, then it shifts — the parser never pulls.) The
+deferred ε-move is thereby promoted to an ordinary lettered edge: give
 every production one extra NFA state, its **reduce node**, and let the
-completed item step to it *on the peeked token*:
+completed item step to it on the pipe's content:
 
 ```
 B → γ •   --t-->   reduce node of B → γ
 ```
 
-The letter on that edge is a free slot, and it is where the lookahead
-filter installs. Label the edge with every token and the machine is
-LR(0); with FOLLOW(B), SLR(1); with the path-precise follow-token
-computed above, canonical LR(1). The delay creates the slot; the filter
-fills it. Accept stops being special — it is the reduce node of the
-augmented `__start → expr`. The oracle-free parser is then the loop of
-§3 with the oracle replaced by a single NFA step on the peeked token —
-the kind of state the step lands in *is* the event:
+Said as compactly as possible: *append the follow-token to the
+production, and keep walking the dot.* The LR(1) item — `B → γ •` with
+follow-token `t` — is an ordinary dotted position in the extended
+production `B → γ t`; the edge above is not a new kind of transition
+but the same dot-advance as every other edge, stepping over the
+appended symbol; and the reduce node is the dot falling off the
+extended end. The machine has exactly one operation, advance the dot —
+positions inside γ step over committed stack symbols, appended
+positions step over pipe content. The appended position is also a free
+slot, and it is where the lookahead filter installs. Extend every
+production by a wildcard token and the machine is LR(0); by FOLLOW(B),
+SLR(1); by the path-precise follow-token computed above, canonical
+LR(1); by k tokens — a pipe of length k, one more dot per token —
+LR(k), with no change anywhere else in the pipeline. The delay creates
+the slot; the filter fills it. Accept stops being special — it is the
+reduce node of the augmented `__start → expr`. The oracle-free parser
+is then the loop of §3 with the oracle replaced by a single NFA step on
+the pipe token — the kind of state the step lands in *is* the event:
 
 ```rust
 loop {
@@ -657,7 +672,9 @@ for (rule_idx, rule) in grammar.rules.iter().enumerate() {
 
 Most enumerated items are unreachable; subset construction never visits
 them, so enumerating eagerly costs nothing but a Vec. Reduce nodes are
-sinks — no outgoing edges.
+sinks — no outgoing edges. And the flat `(dot, la)` index is the
+extended-production reading written in code: it enumerates exactly the
+dotted positions of `rhs · la`.
 
 Determinize and read off what you get: each DFA state is a set of NFA
 states — its items are exactly a canonical LR(1) item set, its reduce nodes
@@ -831,6 +848,17 @@ avoid them. Gazelle never searches: it first canonicalizes behavior
 behavior-preserving merge, which is unique and cheap. The price is
 philosophical, not practical: we minimize behavior after fixing a
 resolution policy, rather than minimizing over all conflict-free tables.
+
+The extended-production view of §4 also prices out LR(k). k tokens of
+lookahead is k appended dot positions — the pipe's contents become part
+of the state, the alphabet stays the same, and the pipeline runs
+verbatim; only the NFA generator knows what k is. The canonical machine
+grows by the pipe dimension, but the minimizer merges every pair of
+states whose buffered tokens never influence a decision, so the shipped
+table should land near LR(1)-minimal, splitting only where a second
+token genuinely decides — the same pay-only-for-behavior mechanism that
+lands LR(1) on the IELR counts. We have not run this experiment; the
+point is that the encoding reduces it to one.
 
 ## 7. Runtime precedence: consulting the oracle at parse time
 
