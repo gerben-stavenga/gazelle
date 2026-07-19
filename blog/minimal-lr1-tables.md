@@ -921,14 +921,22 @@ criteria coincide, not a machine-checked equivalence of the resulting
 tables; what §8 verifies is that the state counts coincide exactly,
 including the hard case.
 
-This also explains why the NP-hardness of optimal LR(1) merging [5] is not
-in our way. That formulation searches for a minimal conflict-free merge of
-canonical tables, where merging can *create* conflicts and the search must
-avoid them. Gazelle never searches: it first canonicalizes behavior
-(resolve, then align — both deterministic), then computes *the* coarsest
-behavior-preserving merge, which is unique and cheap. The price is
-philosophical, not practical: we minimize behavior after fixing a
-resolution policy, rather than minimizing over all conflict-free tables.
+This also locates gazelle precisely relative to the NP-hardness of
+optimal LR(1) merging [5]. That result concerns a search with
+don't-cares: over all merges of canonical states that leave the table
+conflict-free, where merging two states can enable or forbid merging
+others — compatibility is not transitive, and graph coloring hides in
+exactly that freedom. Gazelle never enters the search space. Alignment
+fixes the don't-care entries once, deterministically — fill only where
+every sibling agrees — and after that "mergeable" is behavioral
+equivalence: transitive, with a unique coarsest solution that partition
+refinement finds in polynomial time. What escapes the hardness is not
+cleverness but the objective: we compute the exact minimum of a *fixed*
+behavior, not the minimum over every sound completion. Nothing
+certifies that a craftier choice of spurious entries could not merge
+further on some grammar — that residual freedom is where the
+NP-hardness lives — but the empirical answer of §8 is that the
+fixed-behavior minimum already lands on IELR's counts.
 
 The extended-production view of §4 also prices out LR(k). k tokens of
 lookahead is k appended dot positions — the pipe's contents become part
