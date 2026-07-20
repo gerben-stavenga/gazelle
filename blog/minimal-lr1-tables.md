@@ -390,8 +390,7 @@ So carry all the worlds at once: let each cell of the item stack hold
 the *set* of items the worlds could occupy there. The set version of
 `nfa_transition` — the union over members, ε-edges and all — is a plain
 function from set to set: no guess survives it, and the reachable sets
-are finitely many. This is the **subset construction**, and the sets it
-builds are exactly the canonical LR(1) item sets. (It is also Knuth's
+are finitely many. This is the **subset construction**. (It is also Knuth's
 foundational observation [1]: the stacks from which a parse can still
 succeed — the *viable prefixes* — form a regular language, and a cell's
 set is that language's state after the symbols beneath.) The cells
@@ -439,37 +438,8 @@ verdict list is a singleton everywhere — shift, or one specific reduce — are
 exactly **LR(1)**: the oracle replaced by a table lookup and the one
 token in the pipe.
 
-Two boundary lines keep these claims honest. Knuth's regularity is
-unconditional — it holds for every context-free grammar, ambiguous ones
-included — but it is a statement about the *past* only: everything the
-consumed input can contribute to any parsing decision fits, lossless,
-in one DFA state. And it promises possibility, never uniqueness. The
-top cell holds the exact set of viable verdicts; whether that set
-collapses to one is a question about the *future* — does evidence
-within one token settle it? — and LR(1)-ness is exactly the property
-that it always does. Neither regularity nor unambiguity implies it:
-
-```
-s = x list A => sa | y list B => sb;
-x = C => x;
-y = C => y;
-list = D list => more | D => done;
-```
-
-After committing `C`, the top cell reports — with complete precision —
-that either `x → C` or `y → C` ends here, and the token that decides,
-`A` or `B`, sits beyond arbitrarily many `D`s. The grammar is unambiguous; its
-language is even regular; no lookahead k rescues it. The past is fully
-summarized — the future is simply out of reach. (Knuth also proved the
-language-level consolation: every deterministic language has *some*
-LR(1) grammar [1]. §2.1 says why it consoles less than it seems: a
-rewritten grammar parenthesizes differently, and the parentheses are
-what we came for.) And when even unbounded lookahead would leave two
-whole parses of one input standing, the grammar is ambiguous, and the
-residual choice is the subject of §3.3.
-
 Wiring them in is a *loop rotation* — and the rotation is the entire
-distance from LR(0) to LR(1). Look at where the loop above asks its
+distance from LR(0) to LR(1). Look at where §2.2's loop asks its
 question: at the top of each iteration, on the pre-step state —
 `completed(top)`, consulted before the pipe token is so much as looked
 at. That is the LR(0) schedule: close immediately upon completion. As
@@ -582,6 +552,36 @@ only the cells — which is why the textbook parser doesn't store them
 either. The "stack of LR states" was never mysterious: it is this
 section's first item stack, determinized cell by cell, and the parser
 is a machine that keeps the annotation current.
+
+Two boundary lines keep this section's claims honest. Knuth's
+regularity is unconditional — it holds for every context-free grammar,
+ambiguous ones included — but it is a statement about the *past* only:
+everything the consumed input can contribute to any parsing decision
+fits, lossless, in one DFA state. And it promises possibility, never
+uniqueness. The top cell holds the exact set of viable verdicts;
+whether that set collapses to one is a question about the *future* —
+does evidence within one token settle it? — and LR(1)-ness is exactly
+the property that it always does. Neither regularity nor unambiguity
+implies it:
+
+```
+s = x list A => sa | y list B => sb;
+x = C => x;
+y = C => y;
+list = D list => more | D => done;
+```
+
+After committing `C`, the top cell reports — with complete precision —
+that either `x → C` or `y → C` ends here, and the token that decides,
+`A` or `B`, sits beyond arbitrarily many `D`s. The grammar is
+unambiguous; its language is even regular; no lookahead k rescues it.
+The past is fully summarized — the future is simply out of reach.
+(Knuth also proved the language-level consolation: every deterministic
+language has *some* LR(1) grammar [1]. §2.1 says why it consoles less
+than it seems: a rewritten grammar parenthesizes differently, and the
+parentheses are what we came for.) And when even unbounded lookahead
+would leave two whole parses of one input standing, the grammar is
+ambiguous, and the residual choice is the subject of §3.3.
 
 ## 3. Gazelle
 
@@ -799,17 +799,15 @@ separate theory; that machinery is described elsewhere [9].
 
 ### 3.4 Small tables: align, then minimize
 
-Canonical LR(1) for our C++ grammar has 5350 item sets; bison's LALR table
-for the same grammar has 571 states (discounting bison's synthetic
-`$accept` state, as in §4 throughout). §3.1 described the standard way to
-close that gap — merge during construction, then predict or repair the
-interaction with conflict resolution — and what that machinery costs.
-Two boundary markers frame the design space: finding a minimal
-conflict-free merge of canonical states is NP-hard in its general
-formulation [5], and the one post-hoc construction in the literature,
-Kannapinn's [13], minimizes the completed canonical machine by partition
-refinement but carries reduce information as state annotations rather
-than transitions, and handles only conflict-free grammars (§5).
+The gap to close is §3.1's: 5350 canonical item sets on the C++ grammar
+against LALR's 571 (state counts here and in §4 discount bison's
+synthetic `$accept` state). Two boundary markers frame the design
+space: finding a minimal conflict-free merge of canonical states is
+NP-hard in its general formulation [5], and the one post-hoc
+construction in the literature, Kannapinn's [13], minimizes the
+completed canonical machine by partition refinement but carries reduce
+information as state annotations rather than transitions, and handles
+only conflict-free grammars (§5).
 
 Gazelle closes the gap with two observations and no new algorithm.
 
