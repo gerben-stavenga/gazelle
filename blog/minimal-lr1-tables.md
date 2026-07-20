@@ -71,10 +71,11 @@ makes the entire parse table the transition function of a single DFA.
 §3 collects what that choice pays for:
 
 - a conflict is a reachable state, and conflict resolution is a
-  twenty-line classification pass, run on the canonical automaton
-  before any merging (§3.3);
+  twenty-line classification pass, run on the full, unmerged
+  (canonical) automaton (§3.3);
 - table compression is generic DFA minimization behind a 40-line
-  alignment pass, and reproduces IELR(1)'s state counts exactly (§3.4);
+  alignment pass, and exactly reproduces the state counts of IELR(1),
+  bison's state-of-the-art construction (§3.4);
 - operator precedence is a symbol renaming whose resolution is deferred
   to parse-time data on the token (§3.5);
 - k tokens of lookahead is k more dot positions, with no other change
@@ -105,6 +106,10 @@ Take the standard expression grammar:
 expr = expr PLUS term => add | term => term;
 term = NUM => num | LPAREN expr RPAREN => paren;
 ```
+
+(Notation, used throughout: lowercase names are nonterminals, UPPERCASE
+names are terminals, and `=> name` names the production — the label its
+parentheses will carry.)
 
 A parse tree is a token stream with parentheses. Write the tree for
 `NUM PLUS NUM` inline, one labeled pair per production instance:
@@ -219,8 +224,17 @@ CLOSE     (r, end)                      complete: emit ")r"; lhs(r) is
 
 A parse in progress is a stack of hypotheses — the **item stack** — top
 item active, every item beneath suspended mid-production, plus a value
-stack of finished trees. The fundamental parse loop applies one move
-per iteration to the top of the item stack:
+stack of finished trees. Two conventions make the machine
+self-contained. The grammar is wrapped in an augmented start rule
+`__start = expr`, so that a whole parse is one production instance and
+the machine begins with the single hypothesis `__start → •expr`. And
+the two undefined calls in the loop below carry its semantics:
+`expect(t)` consumes the next input token, killing the run if it is not
+`t`; `choose(b)` picks a production of `b` *nondeterministically* —
+read it as forking the run into one **world** per production, where a
+wrong world simply dies (its `expect` fails, or its input runs out) and
+the input is valid exactly when some world survives. The fundamental
+parse loop applies one move per iteration to the top of the item stack:
 
 ```rust
 let mut items = vec![Item { rule: START, dot: 0 }];   // the item stack
@@ -430,8 +444,9 @@ reach.
 The tie-breaker is the pipe's token, pushed *into* the NFA: annotate every
 item with a **follow-token**, the token that must arrive after its
 production. The epsilon edge from `A → α • B β` with follow-token `t`
-spawns `B → • γ` with follow-tokens drawn from FIRST(β·t) — whatever can
-actually follow this particular `B`. A completed item then delivers its
+spawns `B → • γ` with follow-tokens drawn from FIRST(β·t) — the set of
+tokens that can begin `β·t`, which is whatever can actually follow this
+particular `B`. A completed item then delivers its
 verdict only when the pipe holds its follow-token. Item plus
 follow-token is the classical LR(1) item; grammars for which the refined
 verdict list is a singleton everywhere — shift, or one specific reduce — are
@@ -479,10 +494,11 @@ label. The machine has exactly one operation, advance the dot —
 positions inside γ step over committed stack symbols, appended
 positions step over pipe content. The appended position is also a free
 slot, and it is where the lookahead filter installs. Extend every
-production by a wildcard token and the machine is LR(0); by FOLLOW(B),
-SLR(1); by the path-precise follow-token computed above, canonical
-LR(1); by k tokens — a pipe of length k, one more dot per token —
-LR(k), with no change anywhere else in the pipeline. The rotation
+production by a wildcard token and the machine is LR(0); by FOLLOW(B) —
+every token that can follow a `B` anywhere in the grammar — SLR(1); by
+the path-precise follow-token computed above, canonical LR(1); by k
+tokens — a pipe of length k, one more dot per token — LR(k), with no
+change anywhere else in the pipeline. The rotation
 creates the slot; the filter fills it. Accept stops being special — it
 is the reduce node of the augmented `__start → expr`.
 
@@ -523,13 +539,17 @@ impl Parser {                       // states: one DFA state per committed symbo
 
 Line for line, this is the second reshaping's loop — same control flow,
 same stack motions — with the state type widened from item to item set
-and the guessing gone from the lookup. A close never touches the pipe;
+and the guessing gone from the lookup. The reachable sets of this
+machine are exactly the **canonical LR(1) item sets** — *canonical*
+because nothing has been merged or approximated; this is the automaton
+§3.1's tools exist to avoid building, and the one §3.4 will shrink
+without changing its behavior. A close never touches the pipe;
 the token stays in hand across an entire cascade — after the first
 `NUM` of `NUM PLUS NUM`, the one token `PLUS` licenses `)num`, then
-`)term`, before it finally commits — and each close's goto is an
-ordinary transition on the produced nonterminal from the cell the strip
-exposes. For an LR(1) grammar exactly one arm matches at every step —
-the case where two could is §3.3.
+`)term`, before it finally commits — and each close ends with the
+classical **goto**: an ordinary transition on the produced nonterminal
+from the cell the strip exposes. For an LR(1) grammar exactly one arm
+matches at every step — the case where two could is §3.3.
 
 The rotated schedule is also where canonical LR(1)'s *immediate error
 detection* comes from. A machine that reduces on completion alone —
@@ -682,7 +702,8 @@ The item half of §2's NFA is the textbook construction [6, 7]. The verdict
 half — reduce nodes as ordinary states, reduce actions as ordinary edges —
 is, as far as we can tell, absent from the literature (§5; Kannapinn [13]
 comes closest: his machine carries reduce information as Moore-style
-state output, which is the immediate-schedule encoding above, and he
+state output — attached to states rather than to edges — which is the
+immediate-schedule encoding of §2.4, and he
 explicitly dismisses minimizing the bare transition structure), and it
 is the load-bearing half: with it the transition function carries the *whole*
 parser — symbol edges for shift and goto, follow-token edges for reduce —
@@ -860,8 +881,9 @@ minimization correctly refuses to merge them. For the overwhelmingly common
 case — same-core states reducing the same rule on disjoint lookaheads — the
 gaps fill, the states become transition-identical, and they merge.
 
-Then run partition refinement (Moore's algorithm; the code optimistically
-names it `hopcroft_minimize`). The one LR-specific input is the initial
+Then run partition refinement — repeatedly split state classes whose
+members some transition tells apart, until no split applies (Moore's
+algorithm; the code optimistically names it `hopcroft_minimize`). The one LR-specific input is the initial
 partition: reduce states are sinks, indistinguishable by transitions alone,
 so they are pre-partitioned by rule; all item states start together. After
 minimization the states are permuted — item states first, reduce state for
