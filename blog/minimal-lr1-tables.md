@@ -494,13 +494,36 @@ label. The machine has exactly one operation, advance the dot —
 positions inside γ step over committed stack symbols, appended
 positions step over pipe content. The appended position is also a free
 slot, and it is where the lookahead filter installs. Extend every
-production by a wildcard token and the machine is LR(0); by FOLLOW(B) —
-every token that can follow a `B` anywhere in the grammar — SLR(1); by
-the path-precise follow-token computed above, canonical LR(1); by k
+production by a wildcard token and the machine is LR(0); by the
+path-precise follow-token computed above, canonical LR(1); by k
 tokens — a pipe of length k, one more dot per token — LR(k), with no
-change anywhere else in the pipeline. The rotation
-creates the slot; the filter fills it. Accept stops being special — it
-is the reduce node of the augmented `__start → expr`.
+change anywhere else in the pipeline. The rotation creates the slot;
+the filter fills it. Accept stops being special — it is the reduce node
+of the augmented `__start → expr`.
+
+Note who is *not* on this ladder: SLR(1) and LALR(1). Neither is the
+determinization of an item NFA — both are patches applied to the LR(0)
+automaton after the fact. SLR computes FOLLOW(B) — the union of
+follow-tokens over *every* context in which `B` appears anywhere in the
+grammar — by a separate global analysis, and staples it onto the LR(0)
+machine's verdicts as a filter. The slot could carry those labels, but
+they would be imported, not derived: determinization contributes
+nothing — the state structure stays LR(0) — and a union over all
+contexts is precisely the approximation the path-precise labels avoid.
+LALR is further outside still. Its lookahead sets are properties of
+*merged states* — unions over the paths reaching a DFA state — and are
+computable only once the automaton exists, by a fixpoint run over it.
+No labeling of an item NFA can express them: a label attached to an
+item is the same in every DFA state containing that item, so
+determinization can only produce item-uniform lookahead (SLR's shape)
+or split items by context — and the path-precise split *is* canonical
+LR(1). There is nothing in between; LALR exists only as
+merge-after-the-fact. This is worth stressing, because it explains the
+textbook table format: for the SLR/LALR family, reduce information
+*cannot* live in any transition structure — annotation bolted onto a
+finished automaton is not a presentational choice there but a
+structural necessity. The construction of this section has exactly two
+fixed points, LR(0) and canonical LR(1): no lookahead, or all of it.
 
 The compiled parser is now the second reshaping's function with its two
 open ends closed by the construction: `nfa_transition` becomes
@@ -627,8 +650,10 @@ each discovered a new way merging goes wrong.
 
 **LALR** [2] merges maximally: every pair of states with the same core —
 the same items, ignoring lookaheads — becomes one state, and their
-lookahead sets are unioned. This is yacc's and bison's default, and for
-most grammars it works. Its first failure mode is the famous one:
+lookahead sets are unioned. (§2.4 showed why this machine lives outside
+the NFA→DFA derivation: its lookahead sets are properties of the merged
+states, computable only as annotations on the finished automaton.) This
+is yacc's and bison's default, and for most grammars it works. Its first failure mode is the famous one:
 merging can manufacture conflicts. Take the textbook grammar
 
 ```
