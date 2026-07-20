@@ -1026,6 +1026,20 @@ have merged — but every one of those merges was only reachable by
 contaminating a genuinely unconditional shift context with another
 context's deferred question.
 
+It is worth noting what this feature would cost in the merge-first
+architecture. A deferred cell must be correct under *both* of its
+answers, in exactly the contexts where canonical LR(1) has the
+question — a condition gazelle checks with one guard, locally, because
+the canonical automaton is present. IELR's inadequacy analysis compares
+statically-resolved outcomes against a canonical automaton it never
+builds; supporting deferral would enlarge its outcome domain,
+strengthen "merging changed the winner" to "merging changed either
+branch," and add "canonical asks no question here" to the facts its
+annotations must reconstruct. We know of no LALR- or IELR-based tool
+with runtime precedence, and this is, we believe, the architectural
+reason: deferral composes with resolve-then-minimize, and compounds
+merge-then-repair.
+
 Note what static resolution *cannot* express here: with one grammar rule
 for all binary operators, the same table cell must shift for `*` and reduce
 for `+`. A cell fixed at generation time picks one. `ShiftOrReduce` keeps
