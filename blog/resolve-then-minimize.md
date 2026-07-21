@@ -318,18 +318,30 @@ grammar, together with one token of evidence, has not selected a unique parse
 action. Conflict resolution is the separate act of choosing an output.
 
 Gazelle first reports these states, retaining their canonical item context for
-diagnostics and counterexample generation. It then applies its default policy:
+diagnostics and counterexample generation. Classification is then driven not
+by a global policy but by per-terminal declarations in the grammar. A
+terminal has one of five kinds:
 
 ```text
-items plus reduce nodes  -> item state       (shift wins)
-several reduce nodes     -> lowest rule      (earlier rule wins)
-one reduce node          -> that reduction
-items only               -> item state
+plain           a conflict is an error, reported with counterexamples;
+                it compiles only under a matching `expect` count
+shift ELSE      shift/reduce on this terminal resolves to shift
+reduce X        shift/reduce on this terminal resolves to reduce
+prec OP         both actions are kept; runtime precedence decides (§5)
+conflict NAME   both actions are kept; the lexer decides per token (§5)
 ```
 
-Other deterministic policies could replace this classifier. The relevant
-property is timing: classification happens on the unmerged canonical machine.
-After it, each reachable state has one runtime meaning.
+There is no silent default. An unannotated conflict fails generation with
+its counterexamples unless the grammar acknowledges the exact conflict
+count (`expect 3 rr;`), in which case acknowledged reduce/reduce conflicts
+resolve to the earlier rule. Resolution is data in the grammar rather than
+a property of the tool: the dangling else is the single declaration
+`shift ELSE`, naming the classical disambiguation where the terminal is
+introduced. The property that matters for this paper is timing: whatever
+the declarations say, classification happens on the unmerged canonical
+machine. After it, each reachable state has one runtime meaning — or, for
+`prec` and `conflict` terminals, one precisely delimited deferred
+question (§5).
 
 A hybrid state can duplicate the item behavior of a pure item state elsewhere
 in the automaton. This is an artifact of putting alternatives into target
@@ -522,6 +534,12 @@ reduction on an invalid path; it would turn a canonical unconditional shift
 into a deferred choice on valid input. Gazelle therefore does not fill a
 virtual reduce edge into a state that has a transition on its real twin.
 
+`conflict` terminals ride the same mechanism with a different decision
+source: both branches survive to the table, and the lexer, rather than a
+precedence comparison, supplies the answer per token. This is how Gazelle
+handles C's typedef ambiguity without a lexer hack baked into the parser
+tables.
+
 The application illustrates the advantage of resolving semantics before
 merging. The transition system can preserve both branches until runtime, and
 partition refinement keeps apart exactly the states whose labeled choices
@@ -533,9 +551,9 @@ lexer feedback and semantic values—is outside this paper's central claim.
 Gazelle's `--yacc` mode emits an equivalent Bison grammar, allowing Bison to
 serve as an independent implementation reference. The evaluation uses five
 grammars: C++, C11, Python, Gazelle's regular-expression grammar, and its
-self-hosted meta grammar. Precedence and conflict terminal modifiers are
-stripped for the comparison so both tools receive the same bare grammar and
-default conflict policy.
+self-hosted meta grammar. Terminal resolution modifiers (`shift`, `prec`,
+`conflict`) are stripped for the comparison, so both tools receive the same
+bare grammar, and conflicts are counted rather than resolved.
 
 ### 6.1 Canonical construction
 
