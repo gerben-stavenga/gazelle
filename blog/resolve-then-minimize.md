@@ -20,10 +20,13 @@ output nondeterminism left after determinization.
 
 Canonical LR(1) construction becomes subset construction on the item NFA;
 conflict resolution becomes classification of the ambiguous accepting states;
-and table compression becomes ordinary partition refinement after a small
+and table compression becomes ordinary partition refinement after a
 completion pass fills selected error entries with reductions. The completion
-may delay the detection of invalid input, but it preserves every shift and
-reduction performed on valid input.
+is not a new parser transformation: it is the classical default-reduction
+mechanism under a new selection policy — reductions chosen per terminal and
+aligned across same-core states to expose equivalence, rather than one per
+state for row compression. It may delay the detection of invalid input, but
+it preserves every shift and reduction performed on valid input.
 
 Gazelle implements this pipeline using the same generic automaton module as
 its lexer generator. On five grammars, its canonical item-set counts and
@@ -87,8 +90,9 @@ This paper makes four contributions:
    reductions, is one labeled transition system.
 2. It identifies LR conflicts with output nondeterminism remaining in subset
    states after transition nondeterminism has been eliminated.
-3. It gives a conservative completion rule that exposes common LALR-style
-   merges to generic partition refinement while preserving valid-input parser
+3. It shows that the classical default-reduction transformation, under a
+   new alignment-driven selection policy, exposes common LALR-style merges
+   to generic partition refinement while preserving valid-input parser
    behavior.
 4. It evaluates the construction against Bison's canonical-LR and IELR modes
    and describes runtime precedence as an application of the representation.
@@ -355,10 +359,40 @@ impossible lookahead would witness a valid continuation of the original
 state, contradicting the condition under which the gap was filled. Thus the
 new edge can postpone rejection but cannot create an accepted sentence.
 
-### 4.3 Conservative completion
+### 4.3 Completion as a default-reduction policy
 
-Gazelle groups resolved item states by LR(0) core. Within a group, for every
-terminal *a*, it inspects the reduce targets already present:
+The transformation in this step is not new. Replacing error entries by
+reductions is the classical **default reduction**, used for LR table
+compression since the earliest implementations [11]: a generator elects one
+reduction of a state to stand for every unspecified lookahead, accepting
+delayed error detection in exchange for compact rows. Bison performs exactly
+this transformation under `%define lr.default-reduction` [12]. Gazelle
+changes only the *selection policy*. Classical defaults choose one reduction
+per state, to compress that state's row; Gazelle chooses per terminal, and
+aligns the choices across states with the same LR(0) core, to make whole
+rows equal — compression of the state *set* rather than of a single row.
+The parser semantics cannot tell the policies apart: in both, an error
+entry is replaced by a reduction that no successful parse consults.
+
+Under either policy, every inserted entry satisfies the same two local
+conditions: (i) it replaces an error entry — no existing action changes —
+and (ii) it extends the lookahead set of a reduction the state already
+performs. Condition (ii) holds for Gazelle's rule because the donor sibling
+has the same LR(0) core, so the donated reduction's completed item is
+already present in the receiving state; completion never imports a
+reduction from elsewhere. Classical per-state defaults are therefore a
+special case of the insertions used here, and the preservation argument of
+§4.4 covers both. One assumption deserves note: condition (i) reads an
+error entry as evidence of non-viability, which is true of the canonical
+machine under the policies of §4.1. A resolution policy that deliberately
+maps *viable* lookaheads to error — yacc's `%nonassoc` — would create
+error cells that this argument does not cover, and such cells must be
+marked non-fillable, exactly as §5's virtual-twin guard already does for
+deferred cells.
+
+Concretely, Gazelle groups resolved item states by LR(0) core. Within a
+group, for every terminal *a*, it inspects the reduce targets already
+present:
 
 1. If every state defining a reduce transition on *a* agrees on the same
    target `R_r`, add that edge to siblings where *a* is absent.
@@ -394,13 +428,21 @@ There are two transformations to justify.
 
 **Completion.** Existing edges are never changed. On every valid canonical
 parse, the current terminal or nonterminal therefore follows the same edge as
-before, and the sequence of shifts and reductions is unchanged. A newly added
-edge can be taken only where the original machine had an error. Because it is
-a reduction agreed upon by the same-core contexts in which that lookahead is
-defined, it can remove stack symbols and continue, but it cannot supply a
-missing viable-prefix transition. Any run that later rejoins a valid accepting
-path would imply that the lookahead was viable in the uncompleted state. The
-added edge consequently affects only doomed runs.
+before, and the sequence of shifts and reductions is unchanged. For
+rejection, the key fact is a monotonicity property of reductions: a
+reduction is a parse commitment, so the set of strings acceptable from the
+stack it produces is a subset of the set acceptable from the stack it
+consumed. An inserted reduction is, by condition (ii) of §4.3, a step the
+state performs legitimately under some other lookahead; taking it under a
+non-viable lookahead `a` therefore yields a stack for which `a` is still
+non-viable. By induction, a run consulting inserted entries can only keep
+reducing — it can never reach a shift on `a`, because a shift entry exists
+only where its token is viable. The parser may pop and reduce on a doomed
+run, but it reports the error before consuming the offending token: the
+correct-prefix property is preserved, and no rejected string becomes
+accepted. The argument is local to each inserted entry and each run, so the
+per-terminal independence of the selection policy creates no interaction
+between insertions.
 
 **Quotienting.** Partition refinement merges only states with the same
 classification and the same labeled transitions modulo the final partition.
@@ -431,6 +473,9 @@ time.
 
 The word “minimize” in this paper always refers to this fixed completed
 machine. It does not mean globally fewest states among all sound LR tables.
+In this vocabulary the NP-hard search ranges over insertion policies; the
+classical per-state default and the alignment policy used here are two
+tractable points in that space.
 
 ## 5. Runtime precedence as an application
 
@@ -585,6 +630,13 @@ minimization. Heilbrunner's parsing-automata treatment belongs to the broader
 automata-theoretic LR tradition but retains reduction information outside the
 bare transition relation [8].
 
+Default reductions are long-standing table-compression practice, documented
+in the early LR literature [11] and implemented in Bison [12], together with
+the delayed error detection they cause. Their classical use compresses one
+state's row. §4.3 reuses the identical transformation with a selection
+policy chosen instead to align rows across same-core states — which is what
+makes the latent equivalence visible to partition refinement.
+
 Yang proves that minimizing LR(1) state machines is NP-hard [5]. As §4.5
 explains, Gazelle computes a behavioral quotient only after choosing a fixed
 completion; it does not optimize over all sound completions and therefore does
@@ -594,10 +646,13 @@ not contradict that result.
 
 The present construction has five important limitations.
 
-First, the preservation argument should be made fully formal. In particular,
-the safety of completion is expressed here as an invariant of viable
-lookaheads and same-core states; a proof over parser configurations would make
-all stack assumptions explicit.
+First, the preservation argument should be made fully formal. §4.4 reduces
+the parser-specific content to a single lemma — inserted reductions preserve
+non-viability of the lookahead — with everything after it inherited from
+automata theory; a proof over parser configurations would make that lemma's
+stack assumptions explicit, and should include the formal statement that
+classical per-state default reductions satisfy the same insertion
+conditions.
 
 Second, the evaluation establishes count agreement, not table equivalence.
 Exporting Bison and Gazelle machines into a common representation would permit
@@ -677,3 +732,10 @@ Technische Universität Berlin, 2001.
 
 [10] E. Scott and A. Johnstone, “Generalized bottom up parsers with reduced
 stack activity,” *The Computer Journal* 48(5), 2005.
+
+[11] A. V. Aho and S. C. Johnson, “LR parsing,” *ACM Computing Surveys*
+6(2), 1974.
+
+[12] Free Software Foundation, *Bison: The Yacc-compatible Parser
+Generator*, manual section “Default Reductions” (`%define
+lr.default-reduction`).

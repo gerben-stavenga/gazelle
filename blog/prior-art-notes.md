@@ -119,6 +119,22 @@ Claims under test:
 5. Fix the 572/571 state-count inconsistency.
 6. Resolve the Dijkstra MR number.
 
+## Added 2026-07-21: default-reduction framing (resolve-then-minimize.md §4.3)
+
+- New claim to verify: completion = classical default reductions under a new
+  selection policy; classical per-state defaults are a special case of the
+  insertion conditions (error entry only + extends an existing reduction's
+  lookahead set).
+- **[unverified]** Aho & Johnson, "LR parsing," ACM Computing Surveys 6(2),
+  1974 — cited [11] for default reductions/table compaction; confirm it
+  actually discusses default actions on error entries and delayed error
+  detection.
+- Bison manual `%define lr.default-reduction` cited [12] — confirm exact
+  section name and semantics (most/consistent/accepting values); also check
+  bison's documented %nonassoc caveat matches our §4.3 non-fillable note.
+- Also still queued: extended-production/one-more-dot novelty search; Yang
+  formulation check (machine-measured vs grammar-measured).
+
 ## Still outstanding (workflow died at 42/100 agents)
 
 Verification votes for Pager/Honalee/IELR/langcc/Hyacc/Yang/Dijkstra; final
