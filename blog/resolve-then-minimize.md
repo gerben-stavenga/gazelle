@@ -116,6 +116,10 @@ that may follow this occurrence of `A`. Closure introduces productions for a
 nonterminal after the dot, with lookaheads selected from `FIRST(beta a)`.
 Goto advances the dot over one grammar symbol. The canonical LR(1) automaton
 is the collection of item sets reachable under closure and goto [1, 6].
+Throughout, the grammar is assumed reduced (every symbol reachable and
+productive) and non-cyclic (no `A =>+ A`) — the standard hypotheses under
+which no LR parser can perform an unbounded cascade of reductions without
+consuming input.
 
 At runtime an LR parser keeps a stack of automaton states and holds one input
 token in hand. A shift follows a terminal transition and pushes its target. A
@@ -149,13 +153,16 @@ conflicts on both terminals. The grammar is LR(1); the conflicts are artifacts
 of the approximation.
 
 The same mechanism is more subtle when the canonical automaton already has
-conflicts. Suppose an ambiguous grammar uses the conventional policy “shift
-wins.” A merge can import a reduce action into a context that previously had
-only a shift. Resolving the merged cell still chooses shift, but it now chooses
-shift in both contributing contexts. A declaration or rule ordering can
-similarly affect contexts from which it did not originate. Thus “the conflicts
-were resolved” is insufficient: the merged parser may differ from the
-canonical parser with the same resolution policy.
+conflicts. Suppose a precedence declaration resolves a shift/reduce conflict
+in favor of the reduction. A merge can union the conflicted context with a
+same-core context in which the canonical automaton shifts unconditionally —
+the completed item is present there too, but without that lookahead. The
+merged cell holds both actions, the declaration selects the reduction, and
+the reduction now also fires in the context whose canonical behavior was a
+plain shift. Reduce/reduce resolution by rule order can migrate across
+contexts the same way. Thus “the conflicts were resolved” is insufficient:
+the merged parser may differ from the canonical parser under the same
+resolution policy.
 
 IELR addresses this problem by tracking which lookahead contributions make a
 LALR state inadequate and splitting it until resolved behavior agrees with the
@@ -442,7 +449,12 @@ run, but it reports the error before consuming the offending token: the
 correct-prefix property is preserved, and no rejected string becomes
 accepted. The argument is local to each inserted entry and each run, so the
 per-terminal independence of the selection policy creates no interaction
-between insertions.
+between insertions. One global assumption completes the rejection half:
+each inserted reduction is locally a legal parse step, so a doomed run's
+cascade builds a genuine partial parse of the consumed prefix, and under
+the reduced, non-cyclic hypothesis of §2 the cascade must terminate — in a
+state whose row has no entry for the offending token, where the error is
+reported.
 
 **Quotienting.** Partition refinement merges only states with the same
 classification and the same labeled transitions modulo the final partition.
