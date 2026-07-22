@@ -93,8 +93,10 @@ This paper makes four contributions:
    new alignment-driven selection policy, exposes common LALR-style merges
    to generic partition refinement while preserving valid-input parser
    behavior.
-4. It evaluates state counts against Bison's canonical-LR and IELR modes and
-   describes runtime precedence as an application of the representation.
+4. It checks the resolved canonical machine against Bison's canonical-LR
+   output by bisimulation, matches Bison's IELR state counts after
+   completion and minimization, and describes runtime precedence as an
+   application of the representation.
 
 The claim is deliberately narrower than global minimality. Finding the
 smallest conflict-free merge of canonical LR(1) states is NP-hard in general
