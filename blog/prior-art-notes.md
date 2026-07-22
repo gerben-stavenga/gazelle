@@ -259,23 +259,34 @@ blog/parglare_witness.py, parglare 0.21.1 in-sandbox):
   (kernel lookaheads {STOP,Z} = union).
 - Default (prefer_shifts=True): the genuine question is silently resolved
   to shift AT CONSTRUCTION despite dynamic markers — reduce M->E on z
-  absent from the table entirely; valid 'b x z' unparseable under EVERY
-  filter.
+  absent from the table entirely; filtering the remaining candidate cannot
+  recover valid 'b x z'.
 - prefer_shifts=False: merged cell defers in BOTH contexts; 'a x z' and
   'b x z' reach the same state with the same remaining input but need
-  opposite actions — SHIFT policy fails 'b x z', REDUCE policy fails
-  'a x z' (both clean SyntaxErrors on valid input). No filter of (state,
-  action, remaining input) can be correct; stack excavation would be
-  required.
+  opposite actions — a local SHIFT policy fails 'b x z', while a local
+  REDUCE policy fails 'a x z' (both clean SyntaxErrors on valid input). No
+  filter of (state, action, subresults, remaining input) can be correct.
+- IMPORTANT SCOPE CORRECTION: parglare exposes the full input and arbitrary
+  `context.extra` state. A history-aware filter that rereads the consumed
+  prefix parses all four witness inputs; a shadow canonical parser could do
+  so in general. Thus the witness separates TABLE-LOCAL resolution, not the
+  expressiveness of unrestricted Python callbacks. Morally, allowing the
+  callback to reconstruct the erased parser context is the oracle escape the
+  paper excludes explicitly.
+- Documentation/default defect independently reproduced: the manual shows
+  `Parser(grammar, dynamic_filter=...)`, but the corresponding project test
+  adds `prefer_shifts=False`. Under the documented/default call the two sample
+  expressions both evaluate to 17 rather than the documented 14 and 21,
+  because construction has already discarded the reductions.
 - parglare GLRParser parses all four (fork-and-die); the failure is
   specific to deterministic deferral over merged tables.
 - Side findings: rejecting the sole candidate action crashes parglare
   with unhandled IndexError; filter receives an all-None initialization
   probe call; state-2 item lookaheads suggest FOLLOW-flavored sets.
-- Paper: Appendix A.4 added with the witness; §5 references it. This
-  upgrades the §5 architectural observation to a demonstrated failure
-  mode for THIS shape (one tool, one version, one grammar — scoped
-  accordingly in the text).
+- Paper: Appendix A.4 defines the table-local boundary, demonstrates the
+  failure within it, and shows the history-aware escape. This upgrades the §5
+  architectural observation to a demonstrated table-faithfulness failure for
+  THIS shape (one tool, one version, one grammar — scoped accordingly).
 
 Independent re-verification 2026-07-23 (primary docs via raw.githubusercontent):
 parglare's disambiguation page's worked example instantiates the

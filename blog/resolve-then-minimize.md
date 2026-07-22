@@ -622,6 +622,16 @@ comparison, supplies the answer per token. Gazelle uses this explicit feedback
 channel for C's typedef ambiguity; the contextual decision remains in the
 lexer, but its effect on parsing is represented directly in the table.
 
+The comparison below distinguishes a **table-local resolver** from an
+unrestricted callback. A table-local resolver chooses from the current cell
+using the current token and bounded metadata already maintained by the parser;
+it does not reread the consumed input or run a shadow parser. Without this
+boundary, runtime resolution is vacuous as a parser-generation result: a
+generator could emit a loop that asks arbitrary user code for every action,
+and that code could implement the canonical parser itself. Gazelle's `prec`
+resolver is table-local: each decision compares the incoming token's
+precedence with precedence already carried on the LR stack.
+
 Deferral makes the advantage of the construction order concrete. A deferred
 cell may contain only actions available in the corresponding canonical cell;
 otherwise runtime data could select an action that the canonical machine never
@@ -652,8 +662,10 @@ Appendix A.4 constructs a five-production grammar on which canonical LR(1)
 shifts a token unconditionally in one context and has a genuine deferred
 question on the same token in a same-core context; parglare's merged table
 gives one cell to both, and either erases the question at construction or
-asks it in both contexts, where every filter policy fails a valid input on
-one side. Each of the other thirteen
+asks it in both contexts. No table-local filter can answer correctly on both
+sides. An unrestricted callback can recover by rereading left context or
+maintaining a shadow parser, but doing so moves the context reconstruction
+that the table omitted into user code. Each of the other thirteen
 surveyed generators documents only generation-time precedence in
 deterministic LR mode. GLR systems also offer parse-time ranking of forked
 parses. Appendix A records the survey and its scope.
@@ -1048,7 +1060,7 @@ shows that a general runtime action filter can provide it in a deterministic
 LR parser. Gazelle's narrower contribution is the token-carried table
 mechanism and its preservation through completion and minimization.
 
-### A.4 A witness: merging defeats the general filter
+### A.4 A witness: merging defeats table-local filtering
 
 To make the faithfulness distinction concrete, we constructed a
 five-production grammar and ran it against parglare 0.21.1
@@ -1068,18 +1080,34 @@ same-core state reached by `b E` has a genuine shift/reduce question on
 merges the two states and unions their lookaheads, so one cell answers for
 both contexts. Under the default shift preference, the question is
 resolved away at construction despite the `dynamic` markers, and the valid
-input `b x z` is unparseable under every filter. With
+input `b x z` cannot be recovered by filtering the remaining candidate.
+Notably, parglare's [0.21.1 manual](https://github.com/igordejanovic/parglare/blob/0.21.1/docs/disambiguation.md#dynamic-disambiguation-filter)
+shows its dynamic-precedence example constructed as
+`Parser(grammar, dynamic_filter=...)`, but the project's corresponding
+[regression test](https://github.com/igordejanovic/parglare/blob/0.21.1/tests/func/parsing/disambiguation/test_dynamic_disambiguation_filters.py)
+adds `prefer_shifts=False`; without it, the documented results are not
+obtained. With
 `prefer_shifts=False` the merged cell defers — in both contexts: at the
 decision point, `a x z` and `b x z` present the same automaton state and
 the same remaining input yet require opposite actions, so a shift policy
 fails `b x z` and a reduce policy fails `a x z`. No filter that reads only
-the state, the candidate action, and the remaining input can be correct
-for both; recovering the answer requires walking the stack for left
-context the merge erased. A canonical-faithful table keeps the contexts
-apart — the `a` cell a plain shift, the `b` cell the one deferred entry —
-which is what §5's guard preserves through completion and minimization.
-The witness concerns this grammar and parglare 0.21.1; parglare's GLR
-parser, which forks instead of choosing, parses all four inputs.
+the state, candidate action, semantic subresults, and unread input can be
+correct for both.
+
+Parglare's actual callback is not limited to that local information: it can
+inspect the full input, retain arbitrary state in `context.extra`, or run
+arbitrary code. The executable witness therefore also includes a
+history-aware filter that distinguishes the two inputs by rereading their
+consumed prefix and parses all four successfully. More generally, a callback
+could maintain a shadow canonical parser. That escape does not restore
+faithfulness to the LALR table; it makes user code reconstruct the context
+that merging erased. Counting such an unrestricted callback as a complete
+answer would reduce parser generation to the oracle construction excluded
+above. A canonical-faithful table instead keeps the contexts apart — the `a`
+cell a plain shift, the `b` cell the one deferred entry — which is what §5's
+guard preserves through completion and minimization. The witness concerns
+this grammar and parglare 0.21.1; parglare's GLR parser, which forks instead
+of choosing, parses all four inputs without such reconstruction.
 
 ### A.5 Scope
 

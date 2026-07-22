@@ -1,5 +1,4 @@
-"""Witness: LALR merging makes parglare's dynamic disambiguation unable to
-express a context-dependent deferred choice that canonical LR(1) separates.
+"""Witness: LALR merging defeats table-local dynamic disambiguation.
 
 Grammar (unambiguous):
     S: 'a' M | 'b' M Z;
@@ -17,15 +16,19 @@ so ONE cell must answer for both contexts.
 Consequences demonstrated below (parglare 0.21.1):
 1. Default settings (prefer_shifts=True): the conflict is silently resolved
    to shift at construction despite the `dynamic` marks; valid 'b x z' is
-   unparseable under every filter.
+   unparseable because filtering cannot restore the missing reduction.
 2. prefer_shifts=False: the merged cell defers to the filter — in both
    contexts. At the decision point, 'a x z' and 'b x z' present the same
    automaton state and the same remaining input ('z') but require opposite
-   actions. Hence no filter that depends on the state, the candidate
-   action, and any amount of remaining input is correct for both; the
-   policies below fail on complementary valid inputs. Recovering the answer
-   would require excavating the stack for left context that the merge
-   erased — exactly the information a canonical-faithful table retains.
+   actions. Hence no filter that depends only on the state, candidate action,
+   semantic subresults, and remaining input is correct for both; the two local
+   policies below fail on complementary valid inputs.
+3. A history-aware filter can parse all four by inspecting the consumed input.
+   This is the deliberate oracle escape: arbitrary callback code can rebuild
+   information that the table erased, but the callback has then assumed part
+   of the parser's job. A shadow canonical parser would work for the same
+   reason. The witness is a separation of table-local mechanisms, not a claim
+   that no unrestricted Python program can compensate for merging.
 
 Gazelle's construction keeps the two contexts in separate states: the
 'a'-context cell is a plain shift, the 'b'-context cell is the one deferred
@@ -52,21 +55,42 @@ def in_conflicted_cell(from_state):
     return "3: M = E ." in kernels and "4: M = E . Z" in kernels
 
 
-def make_policy(reduce_on_z):
+def make_local_policy(reduce_on_single_z):
     def policy(context, from_state, to_state, action, production, subresults):
         if from_state is None:          # parglare's initialization probe call
             return True
         if not in_conflicted_cell(from_state):
             return True
-        ahead = context.input_str[context.position:].lstrip()
+        ahead = context.input_str[context.position:].strip()
         if not ahead.startswith("z"):
             return True
+        # Both policies make the necessary shift when two z's remain. They
+        # differ only on the indistinguishable local configurations a/x/z and
+        # b/x/z, where exactly one z remains.
+        should_reduce = reduce_on_single_z and ahead == "z"
         if action == REDUCE:
-            return reduce_on_z
+            return should_reduce
         if action == SHIFT:
-            return not reduce_on_z
+            return not should_reduce
         return True
     return policy
+
+
+def history_aware_policy(context, from_state, to_state, action, production,
+                         subresults):
+    """Recover the erased context by rereading the consumed input."""
+    if from_state is None or not in_conflicted_cell(from_state):
+        return True
+    ahead = context.input_str[context.position:].strip()
+    if not ahead.startswith("z"):
+        return True
+    should_reduce = (context.input_str.lstrip().startswith("b")
+                     and ahead == "z")
+    if action == REDUCE:
+        return should_reduce
+    if action == SHIFT:
+        return not should_reduce
+    return True
 
 
 def run(label, **kwargs):
@@ -91,31 +115,31 @@ if __name__ == "__main__":
         GRAMMAR_OBJ = Grammar.from_string(GRAMMAR)
         # swallow parglare's table dump on conflict reporting
         Parser(GRAMMAR_OBJ, prefer_shifts=False, dynamic_filter=lambda *a: True)
-    run("default settings (prefer_shifts=True), any filter: question erased",
+    run("default settings: filtering cannot restore erased reduction",
         dynamic_filter=lambda *a: True)
     with contextlib.redirect_stdout(io.StringIO()):
         pass
-    import sys
     b = io.StringIO()
     with contextlib.redirect_stdout(b):
-        pA = Parser(GRAMMAR_OBJ, prefer_shifts=False,
-                    dynamic_filter=make_policy(False))
-        pB = Parser(GRAMMAR_OBJ, prefer_shifts=False,
-                    dynamic_filter=make_policy(True))
-    print("--- prefer_shifts=False, SHIFT-on-z policy (context a's answer) ---")
-    for s in INPUTS:
-        try:
-            pA.parse(s)
-            print(f"  parse({s!r:10}) OK")
-        except Exception as e:
-            print(f"  parse({s!r:10}) FAILED ({type(e).__name__})")
-    print("--- prefer_shifts=False, REDUCE-on-z policy (context b's answer) ---")
-    for s in INPUTS:
-        try:
-            pB.parse(s)
-            print(f"  parse({s!r:10}) OK")
-        except Exception as e:
-            print(f"  parse({s!r:10}) FAILED ({type(e).__name__})")
+        parsers = [
+            ("prefer_shifts=False, local SHIFT answer", Parser(
+                GRAMMAR_OBJ, prefer_shifts=False,
+                dynamic_filter=make_local_policy(False))),
+            ("prefer_shifts=False, local REDUCE answer", Parser(
+                GRAMMAR_OBJ, prefer_shifts=False,
+                dynamic_filter=make_local_policy(True))),
+            ("prefer_shifts=False, history-aware oracle", Parser(
+                GRAMMAR_OBJ, prefer_shifts=False,
+                dynamic_filter=history_aware_policy)),
+        ]
+    for label, parser in parsers:
+        print(f"--- {label} ---")
+        for s in INPUTS:
+            try:
+                parser.parse(s)
+                print(f"  parse({s!r:10}) OK")
+            except Exception as e:
+                print(f"  parse({s!r:10}) FAILED ({type(e).__name__})")
     print()
-    print("Expected: each policy fails exactly the input the other context owns")
-    print("('b x z' under SHIFT policy, 'a x z' under REDUCE policy).")
+    print("Expected: the local policies fail 'b x z' and 'a x z',")
+    print("respectively; the history-aware policy parses every input.")
