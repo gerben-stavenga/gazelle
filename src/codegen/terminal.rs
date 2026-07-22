@@ -37,7 +37,7 @@ pub fn generate(ctx: &CodegenContext, info: &CodegenTableInfo) -> TokenStream {
         use crate::grammar::TerminalKind;
         let extra_field = match kind {
             TerminalKind::Prec => Some(quote! { #gazelle_crate_path::Precedence }),
-            TerminalKind::Conflict => Some(quote! { #gazelle_crate_path::Resolve }),
+            TerminalKind::Conflict => Some(quote! { #gazelle_crate_path::Resolution }),
             _ => None,
         };
 

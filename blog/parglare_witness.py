@@ -33,7 +33,7 @@ Consequences demonstrated below (parglare 0.21.1):
 Gazelle's construction keeps the two contexts in separate states: the
 'a'-context cell is a plain shift, the 'b'-context cell is the one deferred
 entry, and the completion guard preserves that separation through
-minimization (resolve-then-minimize.md §5).
+minimization (resolve-then-minimize.tex §5).
 """
 from parglare import Grammar, Parser
 from parglare.parser import SHIFT, REDUCE

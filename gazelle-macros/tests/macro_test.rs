@@ -769,3 +769,72 @@ fn semantic_union_is_unwind_safe_when_action_panics() {
     assert!(panic.is_err());
     assert_eq!(observed_drops(&drops), [1, 1]);
 }
+
+gazelle! {
+    grammar runtime_conflict_macro {
+        start expr;
+        terminals {
+            NUM: _,
+            conflict OP: _
+        }
+
+        expr = expr OP expr => binop
+             | NUM => literal;
+    }
+}
+
+struct RuntimeConflictActions;
+
+impl gazelle::ErrorType for RuntimeConflictActions {
+    type Error = core::convert::Infallible;
+}
+
+impl runtime_conflict_macro::Types for RuntimeConflictActions {
+    type Num = i32;
+    type Op = ();
+    type Expr = i32;
+}
+
+impl Action<runtime_conflict_macro::Expr<Self>> for RuntimeConflictActions {
+    fn build(&mut self, node: runtime_conflict_macro::Expr<Self>) -> Result<i32, Self::Error> {
+        Ok(match node {
+            runtime_conflict_macro::Expr::Binop(left, (), right) => left - right,
+            runtime_conflict_macro::Expr::Literal(value) => value,
+        })
+    }
+}
+
+fn parse_runtime_conflict(second_operator: gazelle::Resolution) -> i32 {
+    let mut parser = runtime_conflict_macro::Parser::<RuntimeConflictActions>::new();
+    let mut actions = RuntimeConflictActions;
+
+    parser = parser
+        .push(runtime_conflict_macro::Terminal::Num(10), &mut actions)
+        .unwrap();
+    parser = parser
+        .push(
+            runtime_conflict_macro::Terminal::Op((), gazelle::Resolution::Shift),
+            &mut actions,
+        )
+        .unwrap();
+    parser = parser
+        .push(runtime_conflict_macro::Terminal::Num(3), &mut actions)
+        .unwrap();
+    parser = parser
+        .push(
+            runtime_conflict_macro::Terminal::Op((), second_operator),
+            &mut actions,
+        )
+        .unwrap();
+    parser = parser
+        .push(runtime_conflict_macro::Terminal::Num(2), &mut actions)
+        .unwrap();
+
+    parser.finish(&mut actions).unwrap()
+}
+
+#[test]
+fn generated_conflict_terminal_accepts_runtime_resolution() {
+    assert_eq!(parse_runtime_conflict(gazelle::Resolution::Reduce), 5);
+    assert_eq!(parse_runtime_conflict(gazelle::Resolution::Shift), 9);
+}

@@ -1,4 +1,4 @@
-# Prior-art sweeps for minimal-lr1-tables.md and resolve-then-minimize.md
+# Prior-art sweeps for minimal-lr1-tables.md and resolve-then-minimize.tex
 
 Deep-research run, 2026-07-17. 42/100 agents completed before hitting the session
 limit; search and deep-read stages are essentially complete, adversarial
@@ -87,7 +87,7 @@ Claims under test:
   hoc). NOT CONFIRMED (do not reuse without reading the full paper):
   "reduces are vertex accept-actions", "backward conflict propagation on the
   LR(0) NFA", "rejects Pager-style processing on efficiency grounds".
-  resolve-then-minimize.md §7 now cites langcc [13] using only the confirmed
+  resolve-then-minimize.tex §7 now cites langcc [13] using only the confirmed
   characterization.
 - **Hyacc** [second sweep 2026-07-22, search-level]: CONFIRMED — Pager's PGM
   with weak-compatibility merging during construction; UPE + UPE-Ext as the
@@ -133,7 +133,7 @@ Claims under test:
 5. Fix the 572/571 state-count inconsistency.
 6. Cite Dijkstra without the disputed MR number.
 
-## Added 2026-07-21: default-reduction framing (resolve-then-minimize.md §4.3)
+## Added 2026-07-21: default-reduction framing (resolve-then-minimize.tex §4.3)
 
 - New claim to verify: completion = classical default reductions under a new
   selection policy; classical per-state defaults are a special case of the
@@ -143,7 +143,7 @@ Claims under test:
   default-reduction claim** (its optimization section is state
   merging/subsuming/unit-production elimination, not row defaults; primary
   PDF unreachable in-session, verdict from ToC + ~10 corroborating
-  searches). REPLACED in resolve-then-minimize.md by [11] Joliat 1973
+  searches). REPLACED in resolve-then-minimize.tex by [11] Joliat 1973
   (CSRG-28, "first to suggest factoring out the error entries" per
   secondary sources) and [14] Johnson, Yacc CSTR 32, 1975. A subsequent
   primary read of Johnson confirms that the original yacc report describes

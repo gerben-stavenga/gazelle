@@ -57,7 +57,8 @@ pub enum TerminalKind {
     Shift,
     /// `reduce` — conflicts are resolved statically in favor of reduce.
     Reduce,
-    /// `conflict` — resolved at runtime by the lexer passing `Resolve::Shift` or `Resolve::Reduce`.
+    /// `conflict` — resolved at runtime by the lexer passing
+    /// `Resolution::Shift` or `Resolution::Reduce`.
     Conflict,
 }
 

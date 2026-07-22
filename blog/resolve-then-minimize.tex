@@ -1625,20 +1625,49 @@ and SWI-Prolog\textquotesingle s
 \href{https://www.swi-prolog.org/pldoc/man?predicate=op/3}{\texttt{op/3}
 reference}. All web sources were accessed in July 2026.
 
-\hypertarget{appendix-b-using-the-generator}{%
-\section{Appendix B. Using the
-generator}\label{appendix-b-using-the-generator}}
+\hypertarget{appendix-b-exposing-lr-as-a-library}{%
+\section{Appendix B. Exposing LR as a
+library}\label{appendix-b-exposing-lr-as-a-library}}
 
-The body of this paper is about table construction. This appendix
-briefly exhibits the surface through which that construction is used,
-because the design goal was never the pipeline alone: recurrent pain
-points of classical generators --- a separate generation step, semantic
-actions interleaved with the grammar, and a parse loop the caller cannot
-control --- shaped the API as much as the automata did.
+The paper's direct contribution is the table construction. A secondary
+design lesson is that the capability of an LR generator is most useful
+when exposed as a library rather than delivered as a framework. The
+algorithms make subtle decisions about context, conflicts, recovery, and
+runtime feedback; applications should be able to use those decisions
+without surrendering control of their build, semantic representation,
+lexer interaction, or parse loop.
 
-\hypertarget{b1-the-grammar-is-only-a-grammar}{%
-\subsection{B.1 The grammar is only a
-grammar}\label{b1-the-grammar-is-only-a-grammar}}
+Here ``library'' means composable ownership boundaries, not merely a
+function callable at runtime. Gazelle exposes the grammar, construction,
+compiled table, runtime decisions, and parser loop as components. Its
+procedural macro is one typed embedding of those components into Rust,
+not a separate framework that owns the application. We regard this
+combination --- a declarative grammar mapped to Rust enums, ordinary
+trait implementations for actions, and a caller-owned loop --- as a
+modest secondary design contribution. The appendix exhibits the design;
+it does not claim a comparative usability evaluation.
+
+\hypertarget{b1-construction-is-a-library-api}{%
+\subsection{B.1 Construction is a library
+API}\label{b1-construction-is-a-library-api}}
+
+Table construction is available directly to programs. A tool can parse
+or construct a grammar, inspect its diagnostics, compile it, and choose
+the runtime interface it needs:
+
+\begin{verbatim}
+let grammar = gazelle::parse_grammar(source)?;
+let compiled = gazelle::CompiledTable::build(&grammar)?;
+let parser = gazelle::CstParser::new(compiled.table());
+\end{verbatim}
+
+This path supports grammar analyzers, conflict tools, dynamic grammars,
+and alternative semantic stacks. The static interface below invokes the
+same construction during Rust compilation and adds typed integration.
+
+\hypertarget{b2-the-grammar-is-only-a-grammar}{%
+\subsection{B.2 The grammar is only a
+grammar}\label{b2-the-grammar-is-only-a-grammar}}
 
 \begin{verbatim}
 gazelle! {
@@ -1664,19 +1693,20 @@ rather than a side channel: the terminal modifiers of §4.1
 (\texttt{shift}, \texttt{reduce}, \texttt{prec}, \texttt{conflict})
 state per terminal how a conflicted cell is decided, a conflict on an
 unannotated terminal is a generation error diagnosed against canonical
-contexts (§2.1), and counted intentional conflicts are declared with
-\texttt{expect} totals in Yacc style. Note also what is absent: because
+contexts (§4.1), and counted intentional conflicts are declared with
+\texttt{expect} totals in yacc style. Note also what is absent: because
 \texttt{prec\ OP} covers a whole precedence family, the grammar needs no
 cascade of one nonterminal per precedence level.
 
-\hypertarget{b2-embedding-in-rust}{%
-\subsection{B.2 Embedding in Rust}\label{b2-embedding-in-rust}}
+\hypertarget{b3-embedding-in-rust}{%
+\subsection{B.3 Embedding in Rust}\label{b3-embedding-in-rust}}
 
 \texttt{gazelle!} is a procedural macro: the constructions of §4 run
 inside the host compiler, so there is no separate generator invocation
-and no generated file to version. For each nonterminal the macro emits
-an enum whose variants mirror the grammar alternatives and whose fields
-are typed through an associated-types trait:
+and no generated file to version. For each nonterminal with named
+alternatives, the macro emits an enum whose variants mirror those
+alternatives and whose fields are typed through an associated-types
+trait:
 
 \begin{verbatim}
 pub enum Expr<A: Types> {
@@ -1686,19 +1716,24 @@ pub enum Expr<A: Types> {
 }
 \end{verbatim}
 
-Semantic code lives entirely outside the macro as ordinary Rust, so type
-errors point at user code rather than into generated text, and editor
-tooling works unchanged.
+Semantic code lives outside the macro as ordinary Rust. In particular,
+type errors in semantic actions generally point at the action
+implementation, where ordinary editor and compiler tooling applies,
+rather than at quoted host-language fragments inside a grammar file.
 
-\hypertarget{b3-actions-as-trait-implementations}{%
-\subsection{B.3 Actions as trait
-implementations}\label{b3-actions-as-trait-implementations}}
+\hypertarget{b4-actions-as-trait-implementations}{%
+\subsection{B.4 Actions as trait
+implementations}\label{b4-actions-as-trait-implementations}}
 
 A backend chooses a representation per nonterminal by implementing a
 \texttt{Types} trait, and folds nodes by implementing \texttt{Action}
 per generated enum:
 
 \begin{verbatim}
+impl gazelle::ErrorType for Evaluator {
+    type Error = EvalError;
+}
+
 impl calc::Types for Evaluator {
     type Num = f64;
     type Op = char;
@@ -1726,27 +1761,29 @@ choices mix freely across nonterminals, and several backends ---
 evaluator, tree builder, pretty-printer --- can implement the same
 grammar.
 
-\hypertarget{b4-the-parse-loop-belongs-to-the-caller}{%
-\subsection{B.4 The parse loop belongs to the
-caller}\label{b4-the-parse-loop-belongs-to-the-caller}}
+\hypertarget{b5-the-parse-loop-belongs-to-the-caller}{%
+\subsection{B.5 The parse loop belongs to the
+caller}\label{b5-the-parse-loop-belongs-to-the-caller}}
 
 Generated parsers are push-based; the caller owns the loop:
 
 \begin{verbatim}
-loop {
-    let token = lexer.next(&actions.ctx)?;  // lexer may read parser-updated state
+while let Some(token) = lexer.next(&actions.ctx)? {
+    // Semantic actions may update the state read by the lexer.
     parser = parser.push(token, &mut actions)?;
 }
+let result = parser.finish(&mut actions)?;
 \end{verbatim}
 
 This is where the runtime side of §5 surfaces. A \texttt{prec} or
 \texttt{conflict} token carries its resolution datum ---
-\texttt{Precedence::Left(6)}, or an explicit \texttt{Shift} or
-\texttt{Reduce} --- and that datum plus the pending stack precedence is
-everything that crosses the table-local boundary. Because the loop is
-open, semantic actions can update state that the lexer reads on the next
-iteration (the classical C \texttt{typedef} feedback) without widening
-that boundary: whatever the lexer learns still reaches the parser only
-as the next token and its datum.
+\texttt{Precedence::Left(6)}, or an explicit
+\texttt{Resolution::Shift} or \texttt{Resolution::Reduce} --- and that
+datum plus the pending stack precedence is everything that crosses the
+table-local boundary. Because the loop is open, semantic actions can
+update state that the lexer reads on the next iteration (the classical C
+\texttt{typedef} feedback) without widening that boundary: whatever the
+lexer learns still reaches the parser only as the next token and its
+datum.
 
 \end{document}
