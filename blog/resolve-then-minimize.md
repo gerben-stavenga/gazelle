@@ -614,7 +614,11 @@ runtime-defined operator precedence with the deterministic `Parser` API.
 Compared with that general callback, Gazelle carries precedence on tokens,
 performs the comparison directly in the generated parser on one stack, and
 uses its real/virtual transition representation to preserve the deferred
-choice through completion and minimization. Each of the other thirteen
+choice through completion and minimization. The faithfulness question also
+separates the two: parglare's filter selects among whatever actions its
+merged LALR tables retain, while Gazelle's construction guarantees the
+deferred set is exactly the canonical machine's — the invariant above and
+the obligation below. Each of the other thirteen
 surveyed generators documents only generation-time precedence in
 deterministic LR mode. GLR systems also offer parse-time ranking of forked
 parses. Appendix A records the survey and its scope.
@@ -960,15 +964,24 @@ deterministic stack.
 | Racc | LALR | precedence table | generation |
 | Rustemo (LR mode) | LR | static declarations | generation |
 | Jison (LR modes) | SLR/LALR/LR | `%left`/`%right`/`%nonassoc` | generation |
-| parglare `Parser` | LR(1) | user `dynamic_filter` over retained actions | parse time |
+| parglare `Parser` | LALR (SLR optional) | user `dynamic_filter` over retained actions | parse time |
 
 Parglare is the one deterministic precedent found. Productions marked
 `dynamic` retain candidate shift and reduce actions, and a predicate called
 during parsing accepts or rejects each action using the parsing context. Its
-manual's example implements input-dependent operator precedence. This is more
+manual's example implements input-dependent operator precedence, and the
+example instantiates the deterministic `Parser` class. This is more
 general than Gazelle's built-in precedence comparison, but it establishes
-that runtime precedence on a deterministic LR stack is not itself novel. The
-other thirteen surveyed tools do not document such a table entry.
+that runtime precedence on a deterministic LR stack is not itself novel.
+Two boundary notes: parglare's deterministic tables are LALR (SLR
+optionally) — the filter exposes whatever actions the merged tables
+retain, and its documentation does not relate that retained set to the
+canonical automaton's per-context actions, which is the faithfulness
+question §5 engineers. And one sentence of the same page states that
+`dynamic` markers "have sense only for GLR parsing"; the page's own
+worked example with the deterministic `Parser` contradicts it, and we read
+the example as authoritative. The other thirteen surveyed tools do not
+document a table entry deferring the choice at all.
 
 ### A.2 Parse-time precedence in GLR systems
 

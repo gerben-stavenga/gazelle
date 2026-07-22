@@ -212,7 +212,7 @@ conflicted cell in its tables and decide at parse time from token data?
 | Racc | LALR | precedence table | static |
 | Rustemo (LR mode) | LR | static declarations | static |
 | Jison (LR modes) | SLR/LALR/LR | %left/%right/%nonassoc | static |
-| parglare `Parser` (omitted by agent) | LR(1) | `dynamic_filter` | runtime |
+| parglare `Parser` (omitted by agent) | LALR/SLR (corrected from LR(1)) | `dynamic_filter` | runtime |
 
 The original agent found parse-time precedence only in GLR systems: tree-sitter
 `prec.dynamic` ("applied at runtime instead of at parser generation time …
@@ -231,6 +231,22 @@ Corrected action: §5 now presents parglare as the closest precedent and
 narrows Gazelle's contribution to its token-carried built-in comparison and
 the representation that preserves the choice through completion and
 minimization. Appendix A includes parglare and exact source links.
+
+Independent re-verification 2026-07-23 (primary docs via raw.githubusercontent):
+parglare's disambiguation page's worked example instantiates the
+deterministic class — `Parser(grammar, dynamic_filter=custom_disambiguation_filter)` —
+with filter signature (context, from_state, to_state, action, production,
+subresults) deciding SHIFT/REDUCE; the same page contains the internally
+inconsistent sentence 'Using these markers have sense only for GLR parsing
+as the LR deterministic parser can't be constructed anyway in case of
+conflicts' — the example is read as authoritative, and Appendix A now
+notes the contradiction. parser.md: 'By default `LALR` tables are used
+with a slight twist to avoid Reduce/Reduce conflicts'; `tables` parameter
+offers parglare.LALR or parglare.SLR only — no canonical LR(1). Appendix
+row corrected from LR(1) to LALR/SLR; this strengthens §5's positioning:
+parglare defers over merged tables with no documented canonical-
+faithfulness analysis, which is exactly the obligation gazelle's
+construction discharges.
 
 ### Agent 2 — langcc / Hyacc characterization (haiku, search-level). PARTIAL
 
