@@ -1237,72 +1237,98 @@ SWI-Prolog's [`op/3`
 reference](https://www.swi-prolog.org/pldoc/man?predicate=op/3). All web
 sources were accessed in July 2026.
 
-## Appendix B. The user-facing surface of the resolution model
+## Appendix B. Using the generator
 
-The classification of §4.1 and the table-local boundary of §5 are not
-internal bookkeeping; they are Gazelle's programming model. This appendix
-exhibits the small API surface through which a user states resolution
-policies and supplies runtime decisions. The purpose is to show that the
-paper's constructs are directly programmable, not to survey the generator's
-interface: typed semantic actions, tree construction, and error recovery are
-engineering outside this paper's scope and are documented with the
-implementation.
+The body of this paper is about table construction. This appendix briefly
+exhibits the surface through which that construction is used, because the
+design goal was never the pipeline alone: recurrent pain points of classical
+generators — a separate generation step, semantic actions interleaved with
+the grammar, and a parse loop the caller cannot control — shaped the API as
+much as the automata did.
 
-### B.1 Terminal kinds declare the resolution policy
+### B.1 The grammar is only a grammar
 
-A grammar names its terminals with an optional modifier:
-
-```text
-terminals {
-    NUM: _,           // plain: participating in a conflict is an error
-    shift ELSE,       // static: resolve shift/reduce to shift (dangling else)
-    prec OP: _,       // deferred: shunting-yard over per-token precedence
-    conflict SEP: _,  // deferred: the token itself selects shift or reduce
+```rust
+gazelle! {
+    grammar Calc {
+        start expr;
+        terminals {
+            NUM: _,
+            prec OP: _,
+            LPAREN, RPAREN,
+        }
+        expr = expr OP expr => binop
+             | NUM => literal
+             | LPAREN expr RPAREN => paren;
+    }
 }
 ```
 
-Each declaration selects, per terminal, the policy §4.1 applies to
-conflicted cells of the canonical machine. `shift` and `reduce` are applied
-at construction and yield ordinary table entries that participate in
-completion like any other. `prec` and `conflict` produce the deferred
-shift-or-reduce cells of §5, represented through the real/virtual branch
-labels and protected by the completion guard described there. A plain
-terminal involved in a conflict fails generation, and the report cites
-canonical contexts, so a diagnosis like §2.1's migration example points at
-the state where the conflict arises rather than at a merged artifact. A
-grammar with counted, intentional plain conflicts may declare totals
-(`expect 19 sr;`), mirroring Yacc practice.
+No host-language code appears inside the grammar. Alternatives are named
+(`=> binop`), not implemented, so the grammar text stays a grammar: readable
+on its own, diffable, and reusable across independent backends. Resolution
+intent is part of this declaration rather than a side channel: the terminal
+modifiers of §4.1 (`shift`, `reduce`, `prec`, `conflict`) state per terminal
+how a conflicted cell is decided, a conflict on an unannotated terminal is a
+generation error diagnosed against canonical contexts (§2.1), and counted
+intentional conflicts are declared with `expect` totals in Yacc style. Note
+also what is absent: because `prec OP` covers a whole precedence family, the
+grammar needs no cascade of one nonterminal per precedence level.
 
-### B.2 Deferred decisions arrive as token data
+### B.2 Embedding in Rust
 
-A `prec` or `conflict` terminal's payload carries the resolution datum,
-produced by the lexer together with the token:
-
-```rust
-"+"  => ('+', Precedence::Left(6)),
-"*"  => ('*', Precedence::Left(7)),
-"**" => ('*', Precedence::Right(9)),
-```
-
-where the runtime vocabulary is exactly
+`gazelle!` is a procedural macro: the constructions of §4 run inside the host
+compiler, so there is no separate generator invocation and no generated file
+to version. For each nonterminal the macro emits an enum whose variants
+mirror the grammar alternatives and whose fields are typed through an
+associated-types trait:
 
 ```rust
-pub enum Precedence { Left(u8), Right(u8) }
-pub enum Resolution { Prec(Precedence), Shift, Reduce }
+pub enum Expr<A: Types> {
+    Binop(A::Expr, A::Op, A::Expr),
+    Literal(A::Num),
+    Paren(A::Expr),
+}
 ```
 
-This is everything that crosses §5's boundary. For `prec`, the parser
-compares the token's level and associativity against the pending construct's
-precedence, re-evaluating after every reduction inside a single `push` — the
-`1 + 2 * 3 * 4` schedule of §5. For `conflict`, the token carries one fixed
-`Shift` or `Reduce` for that push. Because operators are ordinary data, a
-precedence table can be extended while parsing; user-defined operators
-require no grammar change and no table regeneration.
+Semantic code lives entirely outside the macro as ordinary Rust, so type
+errors point at user code rather than into generated text, and editor
+tooling works unchanged.
 
-### B.3 The push loop and where context lives
+### B.3 Actions as trait implementations
 
-Generated parsers are push-based: the caller owns the loop and feeds one
-token at a time.
+A backend chooses a representation per nonterminal by implementing a `Types`
+trait, and folds nodes by implementing `Action` per generated enum:
+
+```rust
+impl calc::Types for Evaluator {
+    type Num = f64;
+    type Op = char;
+    type Expr = f64;
+}
+
+impl gazelle::Action<calc::Expr<Self>> for Evaluator {
+    fn build(&mut self, node: calc::Expr<Self>) -> Result<f64, Self::Error> {
+        match node {
+            calc::Expr::Binop(l, op, r) => apply(op, l, r),
+            calc::Expr::Literal(n) => Ok(n),
+            calc::Expr::Paren(e) => Ok(e),
+        }
+    }
+}
+```
+
+The usual CST-versus-AST decision becomes a per-nonterminal type choice.
+Setting `type Expr = Box<calc::Expr<Self>>` engages a blanket implementation
+that materializes the full concrete tree with no action code at all; setting
+it to `f64`, as above, folds values during parsing and never builds a tree;
+setting it to `Ignore` discards the node, for validation-only parsing. The
+choices mix freely across nonterminals, and several backends — evaluator,
+tree builder, pretty-printer — can implement the same grammar.
+
+### B.4 The parse loop belongs to the caller
+
+Generated parsers are push-based; the caller owns the loop:
 
 ```rust
 loop {
@@ -1311,17 +1337,10 @@ loop {
 }
 ```
 
-Push-mode LR parsing itself is standard — Bison offers `%define
-api.push-pull` — so the exhibit here is not the loop but the division of
-labor it makes explicit. The lexer, which naturally owns left context,
-computes the token and its resolution datum; this generalizes the
-`IDENT`/`KEYWORD` priority device of §4.1 from choosing a token kind to
-choosing a parse action. The parser then selects among the actions of the
-current cell using only that datum and the bounded stack metadata of §5.
-History-dependence is thereby located in token production, where context is
-legitimately available, rather than in action selection, which Appendix A.4
-shows cannot soundly reconstruct context erased by a merged table. Semantic
-actions may in turn update state that the lexer reads on the next iteration
-— the classical C `typedef` feedback — without widening the resolver's
-boundary: whatever the lexer learns still reaches the parser only as the
-next token and its datum.
+This is where the runtime side of §5 surfaces. A `prec` or `conflict` token
+carries its resolution datum — `Precedence::Left(6)`, or an explicit `Shift`
+or `Reduce` — and that datum plus the pending stack precedence is everything
+that crosses the table-local boundary. Because the loop is open, semantic
+actions can update state that the lexer reads on the next iteration (the
+classical C `typedef` feedback) without widening that boundary: whatever the
+lexer learns still reaches the parser only as the next token and its datum.
