@@ -123,7 +123,12 @@ At runtime an LR parser keeps a stack of automaton states and holds one input
 token in hand. A shift follows a terminal transition and pushes its target. A
 reduction by `A -> beta` removes `|beta|` states, exposes a predecessor state,
 and follows its transition on `A`. The lookahead token is not consumed by a
-reduction; several reductions may occur before it is finally shifted.
+reduction; several reductions may occur before it is finally shifted. Two
+standard terms recur below: a **viable prefix** is a grammar-symbol string
+that can appear as the stack during some run extendable to acceptance, and a
+**handle** is a top-of-stack right-hand-side occurrence that a correct
+reduction removes — a property of the prefix, gated but not created by the
+lookahead.
 
 In a conventional presentation, the automaton transition relation supplies
 shift and goto entries while a separate action table supplies reductions. If
