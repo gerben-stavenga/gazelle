@@ -585,11 +585,24 @@ comparison, supplies the answer per token. Gazelle uses this explicit feedback
 channel for C's typedef ambiguity; the contextual decision remains in the
 lexer, but its effect on parsing is represented directly in the table.
 
-The application illustrates the advantage of resolving semantics before
-merging. The transition system can preserve both branches until runtime, and
-partition refinement keeps apart exactly the states whose labeled choices
-differ. A full treatment of runtime precedence—including its interaction with
-lexer feedback and semantic values—is outside this paper's central claim.
+Deferral also serves as a validation of the construction order itself. A
+deferred cell must be correct under *both* of its answers, in exactly the
+contexts where the canonical machine has the question — a condition Gazelle
+checks with the one local guard above, because the canonical automaton is
+present. IELR's inadequacy analysis compares statically resolved outcomes
+against a canonical automaton it never builds; supporting deferral would
+enlarge its outcome domain, strengthen "merging changed the winner" to
+"merging changed either branch," and add "canonical asks no question here"
+to the facts its annotations must reconstruct. We know of no LALR- or
+IELR-based generator with runtime precedence, and we believe this is the
+architectural reason: deferral composes with resolve-then-minimize and
+compounds merge-then-repair. This is an argument about proof obligations,
+not an impossibility result.
+
+The transition system preserves both branches until runtime, and partition
+refinement keeps apart exactly the states whose labeled choices differ. A
+full treatment of runtime precedence—including its interaction with lexer
+feedback and semantic values—is outside this paper's central claim.
 
 ## 6. Evaluation
 
