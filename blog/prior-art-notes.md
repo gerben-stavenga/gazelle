@@ -111,14 +111,14 @@ Claims under test:
   ICAS 2018 (moderate confidence). Verify against PDF: exact theorem
   statement; whether any don't-care/completion language appears; the
   state-count formula.
-- **Dijkstra shunting-yard — UNRESOLVED, check before submission.** The EWD/MC
+- **Dijkstra shunting-yard — RESOLVED FOR CITATION.** The EWD/MC
   archive lists MR **35**/61 as "Algol 60 translation" and MR 34/61 as "On the
   design of machine independent programming languages"; but the primary scan's
   title page carries no MR number at all (only "ALGOL Bulletin Supplement
   nr. 10, November 1961"), and one agent argued CWI catalog records attach
-  34/61 to the combined report. Safest citation: E.W. Dijkstra, *ALGOL-60
-  Translation*, Stichting Mathematisch Centrum, Rekenafdeling, ALGOL Bulletin
-  Supplement nr. 10, 1961.
+  34/61 to the combined report. The paper therefore omits the disputed MR
+  number and cites: E.W. Dijkstra, *ALGOL-60 Translation*, Stichting
+  Mathematisch Centrum, Rekenafdeling, ALGOL Bulletin Supplement nr. 10, 1961.
 
 ## Suggested paper edits (agreed in review, not yet applied)
 
@@ -131,7 +131,7 @@ Claims under test:
    edge into a state that transitions on the real twin (fix/prec-alignment-guard,
    commit 8034a5a; C11 costs 36 states: 470→506).
 5. Fix the 572/571 state-count inconsistency.
-6. Resolve the Dijkstra MR number.
+6. Cite Dijkstra without the disputed MR number.
 
 ## Added 2026-07-21: default-reduction framing (resolve-then-minimize.md §4.3)
 
@@ -212,7 +212,7 @@ conflicted cell in its tables and decide at parse time from token data?
 | Racc | LALR | precedence table | static |
 | Rustemo (LR mode) | LR | static declarations | static |
 | Jison (LR modes) | SLR/LALR/LR | %left/%right/%nonassoc | static |
-| parglare `Parser` (omitted by agent) | LALR/SLR (corrected from LR(1)) | `dynamic_filter` | runtime |
+| parglare `Parser` (omitted by agent) | modified LALR/SLR (corrected from LR(1)) | `dynamic_filter` | runtime |
 
 The original agent found parse-time precedence only in GLR systems: tree-sitter
 `prec.dynamic` ("applied at runtime instead of at parser generation time …
@@ -225,7 +225,25 @@ Swift `precedencegroup`, Haskell fixity. ANTLR is LL. A subsequent
 primary-documentation audit found the omitted counterexample: parglare marks
 productions `dynamic`, retains the candidate actions, and calls a user
 predicate during deterministic LR parsing. Its documented example implements
-runtime operator precedence from input-dependent state.
+runtime operator precedence from input-dependent state: the first distinct
+operator encountered has the lowest priority and each later one a higher
+priority; the callback shifts for a higher-ranked incoming operator and
+reduces for a lower or equal one. Gazelle's `prec` policy builds that
+shunting-yard comparison into the generated parser and carries pending
+precedence on the LR stack, while `conflict` exposes direct token control of
+the same binary entry.
+
+API timing caveat checked against `src/runtime.rs` and generated `push`: a
+generated `conflict` terminal's `Resolution` is fixed before the reduction
+loop and reused for every conflict reached with that lookahead. Reduction
+actions may update an external operator stack, but cannot revise that token,
+so they cannot switch from reducing a higher pending operator to shifting over
+a newly exposed lower one. The low-level parser can reproduce the policy by
+calling `maybe_reduce` repeatedly with a freshly chosen resolution; `prec`
+provides this repeated comparison in the generated parser and carries the
+pending value on its LR stack. Paper framing: `prec` specializes the common
+expression-parsing policy; `conflict` remains the general escape hatch. Do not
+quantify this as “95%” without supporting usage data.
 
 Corrected action: §5 now presents parglare as the closest precedent and
 narrows Gazelle's contribution to its token-carried built-in comparison and
@@ -236,17 +254,15 @@ Independent re-verification 2026-07-23 (primary docs via raw.githubusercontent):
 parglare's disambiguation page's worked example instantiates the
 deterministic class — `Parser(grammar, dynamic_filter=custom_disambiguation_filter)` —
 with filter signature (context, from_state, to_state, action, production,
-subresults) deciding SHIFT/REDUCE; the same page contains the internally
-inconsistent sentence 'Using these markers have sense only for GLR parsing
-as the LR deterministic parser can't be constructed anyway in case of
-conflicts' — the example is read as authoritative, and Appendix A now
-notes the contradiction. parser.md: 'By default `LALR` tables are used
-with a slight twist to avoid Reduce/Reduce conflicts'; `tables` parameter
-offers parglare.LALR or parglare.SLR only — no canonical LR(1). Appendix
-row corrected from LR(1) to LALR/SLR; this strengthens §5's positioning:
-parglare defers over merged tables with no documented canonical-
-faithfulness analysis, which is exactly the obligation gazelle's
-construction discharges.
+subresults) deciding SHIFT/REDUCE. Its precedence example records operators
+in order of first appearance and uses that evolving order in the filter.
+The nearby sentence saying "these markers have sense only for GLR parsing"
+refers to `nops` and `nopse`, not to `dynamic`, so there is no documentation
+contradiction. parser.md says that modified LALR tables are used by default;
+the `tables` parameter alternatively offers SLR, but no canonical LR(1).
+Appendix A records that corrected construction. Parglare therefore defers
+over merged tables with no documented canonical-faithfulness analysis,
+which is the obligation Gazelle's construction addresses.
 
 ### Agent 2 — langcc / Hyacc characterization (haiku, search-level). PARTIAL
 

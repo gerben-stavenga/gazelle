@@ -586,6 +586,30 @@ shifts. Thus, while parsing `1 + 2 * 3`, the incoming `*` shifts over the
 pending `+`, whereas a following `+` causes the pending `*` expression to
 reduce.
 
+This is the shunting-yard decision rule embedded in an LR parser [15]: shift an
+incoming operator when it binds more tightly than the pending operator;
+reduce when it binds less tightly; and on equal levels use associativity to
+choose. Gazelle needs no separate operator stack or output queue. Its LR stack
+carries the pending precedence, and ordinary grammar reductions produce the
+result. At an individual conflicted cell, the `conflict` form below exposes the
+more general choice: instead of applying this built-in policy, the token
+selects the shift or reduce branch directly.
+
+That direct choice does not make `prec` mere shorthand in the generated API.
+A `conflict` token carries one fixed `Shift` or `Reduce` value throughout its
+`push`. An incoming operator can cause several reductions before it is
+shifted, and the correct shunting-yard choice must be recomputed after each
+one against the newly exposed pending operator. In `1 + 2 * 3 * 4`, for
+example, the second `*` must first reduce the pending `*`, then shift over the
+newly exposed `+`; one fixed choice cannot do both. A semantic action could
+pop a separate operator stack, but it cannot revise the current token's
+already fixed resolution. A user could reproduce the policy with the
+low-level parser by resubmitting a decision after every reduction; `prec`
+performs that loop inside the generated parser, using the LR stack itself.
+This makes `prec` the specialized path for the common expression-parsing
+case, while `conflict` remains the escape hatch for other token-directed
+choices.
+
 Completion needs one additional guard. A state may lack `OP_reduce` while
 having a real `OP` shift. Filling the virtual gap would not merely add a
 reduction on an invalid path; it would turn a canonical unconditional shift
@@ -610,15 +634,20 @@ deferred question where the canonical machine had an unconditional answer.
 A documentation survey found one close precedent among fourteen LR parser
 generators. Parglare lets productions retain dynamically filtered actions and
 calls a user-supplied predicate at parse time; its manual demonstrates
-runtime-defined operator precedence with the deterministic `Parser` API.
+runtime-defined operator precedence with the deterministic `Parser` API. Its
+worked example ranks the first distinct operator encountered lowest and each
+later one higher. Its callback then shifts when the incoming operator ranks
+higher than the pending one and reduces when it ranks lower or equal—the
+shunting-yard comparison, with input-defined priorities and left-associative
+ties. That is user-written policy rather than a built-in parser abstraction.
 Compared with that general callback, Gazelle carries precedence on tokens,
 performs the comparison directly in the generated parser on one stack, and
 uses its real/virtual transition representation to preserve the deferred
 choice through completion and minimization. The faithfulness question also
 separates the two: parglare's filter selects among whatever actions its
-merged LALR tables retain, while Gazelle's construction guarantees the
-deferred set is exactly the canonical machine's — the invariant above and
-the obligation below. Each of the other thirteen
+merged LALR tables retain, while Gazelle guarantees that every deferred
+alternative was available in the corresponding canonical cell — the
+invariant above and the obligation below. Each of the other thirteen
 surveyed generators documents only generation-time precedence in
 deterministic LR mode. GLR systems also offer parse-time ranking of forked
 parses. Appendix A records the survey and its scope.
@@ -934,6 +963,9 @@ Reductions,” §5.8.3 “LAC,” and §5.9 “Generalized LR (GLR) Parsing”
 [14] S. C. Johnson, “Yacc: Yet Another Compiler-Compiler,” Computing Science
 Technical Report 32, Bell Laboratories, Murray Hill, NJ, 1975.
 
+[15] E. W. Dijkstra, *ALGOL-60 Translation*, Stichting Mathematisch Centrum,
+Rekenafdeling, ALGOL Bulletin Supplement nr. 10, 1961.
+
 ## Appendix A. Survey: precedence support in parser generators
 
 This appendix records the documentation survey behind §5's comparison. For
@@ -964,36 +996,37 @@ deterministic stack.
 | Racc | LALR | precedence table | generation |
 | Rustemo (LR mode) | LR | static declarations | generation |
 | Jison (LR modes) | SLR/LALR/LR | `%left`/`%right`/`%nonassoc` | generation |
-| parglare `Parser` | LALR (SLR optional) | user `dynamic_filter` over retained actions | parse time |
+| parglare `Parser` | modified LALR (default), SLR optional | user `dynamic_filter` over retained actions | parse time |
 
 Parglare is the one deterministic precedent found. Productions marked
 `dynamic` retain candidate shift and reduce actions, and a predicate called
 during parsing accepts or rejects each action using the parsing context. Its
-manual's example implements input-dependent operator precedence, and the
-example instantiates the deterministic `Parser` class. This is more
-general than Gazelle's built-in precedence comparison, but it establishes
-that runtime precedence on a deterministic LR stack is not itself novel.
-Two boundary notes: parglare's deterministic tables are LALR (SLR
-optionally) — the filter exposes whatever actions the merged tables
-retain, and its documentation does not relate that retained set to the
-canonical automaton's per-context actions, which is the faithfulness
-question §5 engineers. And one sentence of the same page states that
-`dynamic` markers "have sense only for GLR parsing"; the page's own
-worked example with the deterministic `Parser` contradicts it, and we read
-the example as authoritative. The other thirteen surveyed tools do not
-document a table entry deferring the choice at all.
+manual's example makes the first distinct operator encountered the lowest
+priority and later operators progressively higher. Its filter shifts when the
+incoming operator ranks higher than the pending one and reduces when it ranks
+lower or equal. For example, it parses `1 + 2 * 3 - 4 + 5` as
+`((1 + (2 * (3 - 4))) + 5)`. The example instantiates the deterministic
+`Parser` class. This user-supplied filter is more general than Gazelle's
+built-in precedence comparison, but it establishes that runtime precedence on
+a deterministic LR stack is not itself novel.
+Parglare's deterministic tables use a modified LALR construction by default,
+with SLR optional. The filter exposes whatever actions those tables retain,
+and its documentation does not relate that retained set to the canonical
+automaton's per-context actions, which is the faithfulness question §5
+engineers. The other thirteen surveyed tools do not document a table entry
+deferring the choice at all.
 
 ### A.2 Parse-time precedence in GLR systems
 
-Generalized parsers do offer parse-time precedence, by a different
-mechanism: the conflicted cell forks the parse, and precedence ranks the
-surviving alternatives. Tree-sitter's `prec.dynamic` assigns rule weights at
-runtime and selects the successful subtree with the greatest accumulated
-weight. Bison's GLR mode uses `%dprec` to prefer the surviving action with the
-highest declared dynamic precedence [12]. Lezer similarly permits declared
-ambiguities resolved during its GLR-style parse, and Happy has a GLR mode
-with semantic disambiguation. In each case the mechanism
-presupposes nondeterministic parsing; none applies to the tool's
+GLR tables routinely retain the shift and every applicable reduction in a
+conflicted cell. At runtime the parser forks over that action set, and
+precedence can rank the surviving alternatives. Tree-sitter's `prec.dynamic`
+assigns rule weights at runtime and selects the successful subtree with the
+greatest accumulated weight. Bison's GLR mode uses `%dprec` to prefer the
+surviving action with the highest declared dynamic precedence [12]. Lezer
+similarly permits declared ambiguities resolved during its GLR-style parse,
+and Happy has a GLR mode with semantic disambiguation. In each case the
+mechanism presupposes nondeterministic parsing; none applies to the tool's
 deterministic LR tables.
 
 ### A.3 Runtime precedence outside LR generation
