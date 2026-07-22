@@ -605,8 +605,8 @@ conflict resolution; analogous runtime deferral would appear to require
 preserving the complete canonical action set and whether a conflict exists in
 each context. We have not implemented that extension, so this is an
 architectural observation rather than a complexity or impossibility claim.
-Once Gazelle's real/virtual branch representation is in place, preserving
-deferral through completion requires the one additional guard above. Bison's
+With Gazelle's real/virtual branch representation in place, preserving
+deferral through completion costs exactly that one guard. Bison's
 `%dprec` is superficially related but operates in GLR mode by ranking surviving
 parses [12]; Gazelle instead chooses one action on a single deterministic LR
 stack before either branch executes.
