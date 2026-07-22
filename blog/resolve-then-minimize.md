@@ -534,19 +534,24 @@ strengthen the result further.
 
 ### 4.5 Relation to NP-hard minimization
 
-Optimal merging of LR(1) states is NP-hard because undefined entries provide
-choices: different completions make different pairs compatible, and
-compatibility need not be transitive [5]. Gazelle does not solve that search
-problem. It first fixes the undefined entries using the unanimous-reduction
-rule. Behavioral equivalence of the resulting labeled transition system is
-then transitive and has a unique coarsest quotient computable in polynomial
-time.
+Yang proves that minimizing LR(1) state machines is NP-hard, reducing graph
+coloring to the question of which same-core states of a canonical machine
+can be merged without introducing conflicts [5]. The hard search is over
+merge choices on a machine that is already built: merges interact —
+combining one pair can enable or forbid combining others — so the minimum
+conflict-free merge is a global combinatorial problem. (Each such merge can
+equally be read as a choice of error-entry insertions, since merging states
+with disjoint reduce lookaheads is completing each with the other's entries;
+this completion view is ours, not Yang's.) Gazelle does not attack that
+problem. It fixes the inserted entries once, by the unanimous-reduction
+rule, and computes the unique coarsest quotient of the resulting completed
+transition system — polynomial and deterministic, but possibly coarser than
+what a different completion, or a cleverer merge, could reach.
 
 The word “minimize” in this paper always refers to this fixed completed
-machine. It does not mean globally fewest states among all sound LR tables.
-In this vocabulary the NP-hard search ranges over insertion policies; the
-classical per-state default and the alignment policy used here are two
-tractable points in that space.
+machine. It does not mean globally fewest states among all sound LR tables:
+Yang's optimum ranges over all conflict-free merges of the canonical
+machine, and nothing here claims to reach it.
 
 ## 5. Runtime precedence as an application
 
@@ -602,6 +607,14 @@ and reduce branches before determinization and retaining their distinct labels
 through minimization; the completion guard above enforces the same invariant
 at the one place completion could otherwise violate it, by manufacturing a
 deferred question where the canonical machine had an unconditional answer.
+
+To our knowledge, no deterministic LR parser generator offers runtime
+operator precedence: a survey of the documentation of thirteen generators
+(Bison, Byacc, Menhir, Happy, CUP, Lemon, Hyacc, LALRPOP, PLY, SLY, Racc,
+Rustemo, Jison) found only generation-time precedence declarations, with
+parse-time precedence appearing solely in GLR systems — tree-sitter's
+dynamic precedence, Bison's `%dprec` — where it ranks forked parses, and in
+hand-written Pratt-style parsers outside the generator setting.
 
 Deferral imposes a different proof obligation on a merge-first construction.
 IELR's inadequacy analysis is designed to preserve the result of static
@@ -788,9 +801,11 @@ policy chosen instead to align rows across same-core states — which is what
 makes the latent equivalence visible to partition refinement.
 
 Yang proves that minimizing LR(1) state machines is NP-hard [5]. As §4.5
-explains, Gazelle computes a behavioral quotient only after choosing a fixed
-completion; it does not optimize over all sound completions and therefore does
-not contradict that result.
+explains, Gazelle computes the coarsest behavioral quotient of one
+deterministically completed machine; it does not search over conflict-free
+merges or completions, and therefore does not contradict that result — it
+answers a different, tractable question whose empirical adequacy §6
+measures.
 
 ## 8. Limitations and future work
 

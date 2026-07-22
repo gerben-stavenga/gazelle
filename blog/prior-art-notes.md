@@ -96,12 +96,21 @@ Claims under test:
 
 ## Citation checks
 
-- **Wuu Yang, arXiv:2110.00776, "Minimizing LR(1) State Machines is NP-Hard"**
-  [unverified, but two independent agents agree]: author's name is "Wuu Yang"
-  (not "W. Yang"), submitted 2021-10-02. NP-hardness via node-coloring → CFG →
-  LR(1) machine. Note this concerns *optimal* merging; Kannapinn's (and
-  gazelle's) minimization is over a fixed equivalence, so no contradiction —
-  but the paper should phrase its "minimal" claim carefully against this.
+- **Wuu Yang, arXiv:2110.00776** [third check 2026-07-22, search-level
+  reconstruction; PDF unreachable in-session — READ PRIMARY BEFORE
+  CAMERA-READY]: abstract quote confirmed verbatim (node-coloring reduced
+  indirectly: graph → CFG → canonical LR(1) machine, incremental
+  construction from a two-node template). Reconstruction: machine has
+  4n^2-2n+3 states (poly in graph); graph k-colorable iff n-k similar-state
+  pairs mergeable; constraints = no reduce/reduce conflict + successor
+  consistency. IMPORTANT: hardness is merge-selection on a GIVEN machine;
+  the old "undefined entries/completions/non-transitive compatibility"
+  mechanism attribution was OUR framing, not Yang's — resolve-then-minimize
+  §4.5 rewritten accordingly (completion view retained but explicitly
+  marked ours). Possible earlier version: "Extended LALR(1) Parsing,"
+  ICAS 2018 (moderate confidence). Verify against PDF: exact theorem
+  statement; whether any don't-care/completion language appears; the
+  state-count formula.
 - **Dijkstra shunting-yard — UNRESOLVED, check before submission.** The EWD/MC
   archive lists MR **35**/61 as "Algol 60 translation" and MR 34/61 as "On the
   design of machine independent programming languages"; but the primary scan's
