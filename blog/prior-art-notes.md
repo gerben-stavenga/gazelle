@@ -81,13 +81,18 @@ Claims under test:
   loses canonical-LR(1) power exactly when the grammar is non-LR(1) with a
   conflict-resolution spec is the failure mode gazelle's ordering avoids —
   strongest related-work hook for Claim 2.
-- **langcc (Zimmerman)**: reduces are vertex accept-actions, not transitions;
-  deliberately avoids constructing canonical LR(1) (backward conflict
-  propagation on the LR(0) NFA, then builds the small automaton directly).
-  Opposite starting point; rejects Pager-style full-automaton processing on
-  efficiency grounds.
-- **Hyacc**: Pager's PGM; its only post-hoc step (UPE Ext) is a literal
-  duplicate-action-row hash merge, not partition refinement.
+- **langcc (Zimmerman)** [second sweep 2026-07-22, search-level]: CONFIRMED —
+  CPS grammar transformation, optimized NFA construction, construction-time
+  k-follow-set partitioning (size attacked during construction, not post
+  hoc). NOT CONFIRMED (do not reuse without reading the full paper):
+  "reduces are vertex accept-actions", "backward conflict propagation on the
+  LR(0) NFA", "rejects Pager-style processing on efficiency grounds".
+  resolve-then-minimize.md §7 now cites langcc [13] using only the confirmed
+  characterization.
+- **Hyacc** [second sweep 2026-07-22, search-level]: CONFIRMED — Pager's PGM
+  with weak-compatibility merging during construction; UPE + UPE-Ext as the
+  post-hoc steps (Pager's unit-production elimination + extension). NOT
+  CONFIRMED: the "duplicate-action-row hash merge" phrasing — drop it.
 
 ## Citation checks
 

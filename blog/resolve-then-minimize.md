@@ -766,6 +766,14 @@ minimization. Heilbrunner's parsing-automata treatment belongs to the broader
 automata-theoretic LR tradition but retains reduction information outside the
 bare transition relation [8].
 
+langcc is a contemporary LR-family generator that attacks table size from
+the construction side [13]: a continuation-passing-style grammar
+transformation enlarges the accepted grammar class, and an optimized NFA
+construction partitions follow sets as the automaton is built, keeping it
+small rather than shrinking it afterwards. That route and the post-hoc one
+taken here — materialize, resolve, complete, quotient — are complementary
+rather than competing.
+
 Default reductions are long-standing table-compression practice, documented
 in the early LR literature [11] and implemented in Bison [12], together with
 the delayed error detection they cause. Their classical use compresses one
@@ -890,3 +898,5 @@ stack activity,” *The Computer Journal* 48(5), pp. 565–587, 2005.
 [12] Free Software Foundation, *Bison: The Yacc-compatible Parser Generator*,
 manual sections “Generalized LR Parsing,” “LR Table Construction,” and
 “Default Reductions” (`%dprec`, `%define lr.default-reduction`).
+
+[13] J. Zimmerman, “Practical LR parser generation,” arXiv:2209.08383, 2022.
