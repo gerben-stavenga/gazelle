@@ -28,9 +28,9 @@ canonical item-set and conflict counts agree with GNU Bison's canonical-LR
 mode. After completion and minimization, its state counts agree with Bison's
 IELR mode: the bare comparison form of a 292-line C++ grammar falls from 5,350
 canonical states to 601, while LALR has 571 states and would change resolved
-behavior. The production Gazelle grammar retains runtime-resolution modifiers
-and has 632 states; the difference is the cost of preserving those additional
-semantics. Equality of state counts is evidence about compactness, not a proof
+behavior. The production Gazelle grammar retains its terminal resolution
+modifiers and has 632 states; the difference is the cost of preserving those
+additional semantics. Equality of state counts is evidence about compactness, not a proof
 that the constructions produce isomorphic machines or equally sized encoded
 tables. The result is a simpler route to a canonical-LR-equivalent parser whose
 state count, on the bare grammars evaluated here, is the same as IELR.
@@ -44,7 +44,7 @@ construction. If a generator resolves conflicts in this automaton, the
 resolution is applied in precisely the contexts in which each action arose.
 
 The difficulty is size. The canonical automaton for the C++ grammar used in
-this paper contains 5,350 item states. The corresponding LALR automaton has
+this paper contains 5,350 item sets. The corresponding LALR automaton has
 571. This gap explains the usual construction order: build or approximate the
 small machine first, then perform conflict analysis on it. Unfortunately,
 merging LR(1) contexts can create new conflicts, and it can also change how a
@@ -196,14 +196,15 @@ to `[X -> . gamma, b]` for its productions and every
 `b in FIRST(beta a)`. This is the familiar item-NFA formulation of canonical
 LR construction [6, 7].
 
-Gazelle adds one accepting state `R_r` for every production *r*. For every
+Gazelle adds one **reduce state** `R_r` for every production *r* — an
+accepting state in the lexer sense. For every
 completed item `[A -> beta ., a]`, it adds
 
 ```text
 [A -> beta ., a] --a--> R_r .
 ```
 
-The accepting state is distinguished by production *r*: reaching it recognizes
+The reduce state is distinguished by production *r*: reaching it recognizes
 a completed right-hand side and emits the action “reduce by *r*.” This is the
 same role that a token-distinguished accepting state plays in a lexer NFA.
 Only `R_r` for the augmented start production denotes acceptance of the whole
@@ -276,7 +277,10 @@ canonical construction computes.
 each reachable subset state yields the canonical LR(1) item set reached by the
 same viable prefix. For every terminal and nonterminal, the encoded machine
 contains the corresponding shift, goto, or reduce edge if and only if the
-conventional canonical table contains that action.
+conventional canonical table contains that action. The projection is
+many-to-one: a hybrid state and a pure item state can share one item set, so
+the encoded machine may carry more physical states than the canonical
+automaton has item sets (§6.1 accounts for the duplicates when counting).
 
 The argument follows directly by induction over subset construction: epsilon
 closure is LR(1) closure, symbol advance is goto, and the only additional edge
@@ -437,6 +441,13 @@ ways to complete error entries, nor does it claim that its choice produces the
 smallest possible parser. It chooses a deterministic completion justified by
 same-core context and unanimous existing reductions.
 
+The two selection policies are not rivals; Gazelle uses both, at different
+stages. Alignment-driven insertion runs before minimization, where its job
+is state-count reduction. The classical per-state default runs afterwards,
+at table encoding: each state elects its most frequent reduction and the
+encoded row omits the entries that match it — ordinary row compression on
+the already-minimized machine.
+
 After completion, Gazelle runs iterative partition refinement. The initial
 partition places all item states together and places reduce states in classes
 distinguished by production. Refinement repeatedly splits a class when two
@@ -471,9 +482,12 @@ witness a rightmost derivation in which `a` can follow the corresponding
 occurrence of `A` after `beta` is reduced. Canonical LR(1) lookahead propagation
 would then include `a` on that completed item and put a reduce action in the
 original cell, contradicting that the cell was an error. Thus an inserted
-reduction preserves the non-viability of the held lookahead. Repeating the
-argument after each inserted reduction shows that a doomed run cannot reach a
-shift of that token or an accepting configuration.
+reduction preserves the non-viability of the held lookahead. The repetition
+is licensed by an invariant worth stating: each inserted reduction is a
+locally legal parse step, so the stack still encodes a viable prefix after
+it, and the argument applies verbatim at the next inserted edge. A doomed
+run therefore never reaches a shift of the held token or an accepting
+configuration.
 
 The parser may pop and reduce before discovering the error, but it rejects
 without consuming the offending token: the correct-prefix property is
