@@ -145,16 +145,22 @@ Claims under test:
   PDF unreachable in-session, verdict from ToC + ~10 corroborating
   searches). REPLACED in resolve-then-minimize.md by [11] Joliat 1973
   (CSRG-28, "first to suggest factoring out the error entries" per
-  secondary sources) and [14] Johnson, Yacc CSTR 32, 1975 (earliest
-  implementation, per-state yydefact defaults). Both replacements are
-  search-verified only — read Joliat's TR and the yacc report before
-  camera-ready. Alternative if Joliat is unobtainable: Anderson, Eve &
+  secondary sources) and [14] Johnson, Yacc CSTR 32, 1975. A subsequent
+  primary read of Johnson confirms that the original yacc report describes
+  a per-state default action, often a reduction. Joliat's more specific
+  error-entry attribution remains search-verified only; read the report
+  before restoring that wording. Alternative if Joliat is unobtainable:
+  Anderson, Eve &
   Horning, "Efficient LR(1) parsers," Acta Informatica 2:12-39, 1973.
-- Bison manual [12]: **VERIFIED 2026-07-22** against 3.8.2 — §5.8.1 LR Table
+- Bison manual [12]: **VERIFIED 2026-07-22; INTERPRETATION CORRECTED BY
+  SUBSEQUENT AUDIT** against 3.8.2 — §5.8.1 LR Table
   Construction (lr.type: lalr/ielr/canonical-lr), §5.8.2 Default Reductions
   (lr.default-reduction: most/consistent/accepting; delayed-detection quote
-  confirmed), §5.8.3 LAC (parse.lac), §5.9 GLR (%dprec GLR-only). Manual
-  documents the %nonassoc-masking caveat explicitly — now cited in §4.3.
+  confirmed), §5.8.3 LAC (parse.lac), §5.9 GLR (%dprec GLR-only). The manual
+  lists `%nonassoc`, default reductions in inconsistent states, and state
+  merging as separate causes of delayed or inaccurate error behavior. It
+  does not say that defaults overwrite explicit `%nonassoc` error actions;
+  §4.3 now uses the manual's three-cause framing.
 - Also still queued: extended-production/one-more-dot novelty search; Yang
   formulation check (machine-measured vs grammar-measured).
 - The draft no longer claims that no deterministic LR generator offers runtime
@@ -162,16 +168,19 @@ Claims under test:
   Happy, CUP, lemon, Hyacc, tree-sitter/Lezer (GLR-family, distinguish), ANTLR
   (LL, distinguish), and operator-precedence/Pratt systems (Prolog `op/3`,
   Swift) that offer runtime precedence but are not LR generators.
-- **Sweep run 2026-07-22 (single doc-level agent): claim CONFIRMED.** 13+
+- **Sweep run 2026-07-22 (single doc-level agent): ORIGINAL CLAIM LATER
+  DISPROVED BY AN OMITTED TOOL.** 13
   deterministic LR generators checked (Menhir, LALRPOP, Happy, CUP, Lemon,
   Hyacc, Bison-LALR, Byacc, Racc, PLY, SLY, Rustemo, Jison): all static
   precedence or none. Runtime-decided precedence found only in GLR systems
   (tree-sitter `prec.dynamic` — "applied at runtime… picks the subtree whose
   rule has the highest total dynamic precedence"; Lezer opt-in GLR; Bison
   `%dprec` GLR-only) and non-generator systems (Prolog `op/3`, Pratt/
-  precedence climbing, Swift `precedencegroup`, Haskell fixity). Safe to
-  restore the §5 claim with its "to our knowledge" hedge and the existing
-  GLR/`%dprec` distinction.
+  precedence climbing, Swift `precedencegroup`, Haskell fixity). A subsequent
+  audit found that the sweep omitted parglare, whose deterministic `Parser`
+  supports a runtime `dynamic_filter` and whose manual demonstrates
+  input-dependent operator precedence. The broad novelty claim has therefore
+  been removed.
 
 ## Verification sweep 2026-07-22 — five parallel agents (full record)
 
@@ -183,7 +192,7 @@ abstracts, and secondary literature — the primary texts must still be read
 before camera-ready. Agents 1–3 worked against live official documentation
 and are correspondingly stronger.
 
-### Agent 1 — runtime-precedence tool survey (haiku, docs-level). CONFIRMED
+### Agent 1 — runtime-precedence tool survey (haiku, docs-level). ORIGINAL CONCLUSION SUPERSEDED
 
 Question: does any deterministic LR parser generator keep both actions of a
 conflicted cell in its tables and decide at parse time from token data?
@@ -203,19 +212,25 @@ conflicted cell in its tables and decide at parse time from token data?
 | Racc | LALR | precedence table | static |
 | Rustemo (LR mode) | LR | static declarations | static |
 | Jison (LR modes) | SLR/LALR/LR | %left/%right/%nonassoc | static |
+| parglare `Parser` (omitted by agent) | LR(1) | `dynamic_filter` | runtime |
 
-Parse-time precedence found only in GLR systems: tree-sitter
+The original agent found parse-time precedence only in GLR systems: tree-sitter
 `prec.dynamic` ("applied at runtime instead of at parser generation time …
 picks the subtree whose corresponding rule has the highest total dynamic
 precedence"), Bison GLR `%dprec` ("first finding one whose rule has the
 highest dynamic precedence"), Lezer (opt-in GLR), Happy-GLR. Non-LR
 runtime-precedence systems, for the qualifier: Prolog `op/3`
 (operator-precedence reader), Pratt/precedence climbing (hand-written),
-Swift `precedencegroup`, Haskell fixity. ANTLR is LL. Sources: official
-manuals, URLs in resolve-then-minimize.md Appendix A.
+Swift `precedencegroup`, Haskell fixity. ANTLR is LL. A subsequent
+primary-documentation audit found the omitted counterexample: parglare marks
+productions `dynamic`, retains the candidate actions, and calls a user
+predicate during deterministic LR parsing. Its documented example implements
+runtime operator precedence from input-dependent state.
 
-Action taken: §5 novelty claim restored with survey basis; Appendix A added
-to resolve-then-minimize.md with tables, quotes, and scope statement.
+Corrected action: §5 now presents parglare as the closest precedent and
+narrows Gazelle's contribution to its token-carried built-in comparison and
+the representation that preserves the choice through completion and
+minimization. Appendix A includes parglare and exact source links.
 
 ### Agent 2 — langcc / Hyacc characterization (haiku, search-level). PARTIAL
 
@@ -232,7 +247,7 @@ elimination. NOT FOUND: "duplicate-action-row hash merge".
 Action taken: langcc restored to related work as [13] using only the
 confirmed characterization; unverified phrases marked do-not-reuse above.
 
-### Agent 3 — Bison manual (haiku, against gnu.org 3.8.2). FULLY VERIFIED
+### Agent 3 — Bison manual (haiku, against gnu.org 3.8.2). EVIDENCE VERIFIED; ORIGINAL INTERPRETATION CORRECTED
 
 §5.8.1 "LR Table Construction" (`lr.type`: lalr/ielr/canonical-lr);
 §5.8.2 "Default Reductions" (`lr.default-reduction`: most/consistent/
@@ -240,11 +255,17 @@ accepting; delayed-detection passage quoted: "the parser sometimes fails
 to detect the syntax error until it reaches a later state"); §5.8.3 LAC
 (`parse.lac`: none/full; "solves these problems for canonical LR, IELR,
 and LALR without sacrificing %nonassoc, default reductions, or state
-merging"); §5.9 "Generalized LR (GLR) Parsing" (`%dprec` GLR-only). The
-manual explicitly documents the %nonassoc-masking caveat.
+merging"); §5.9 "Generalized LR (GLR) Parsing" (`%dprec` GLR-only).
 
-Action taken: [12] now cites version + section numbers; §4.3's %nonassoc
-caveat upgraded to "documented, with LAC as Bison's repair".
+Subsequent primary-source audit correction: the quoted evidence does not
+establish `%nonassoc` masking. The default-reduction section distinguishes
+an absent action from an explicit `%nonassoc` error action; a default makes
+the former impossible but does not overwrite the latter. The LAC section
+names `%nonassoc`, inconsistent-state defaults, and state merging as distinct
+culprits.
+
+Action taken: [12] cites version + section numbers; §4.3 now states the three
+causes separately and describes LAC as addressing them collectively.
 
 ### Agent 4 — Aho & Johnson 1974 (sonnet, PDFs blocked). LIKELY WRONG REF
 
@@ -261,10 +282,12 @@ factoring out the error entries"); Johnson, Yacc CSTR 32, 1975 (earliest
 implementation); Dragon Book §4.7 (modern treatment).
 
 Action taken: [11] replaced by Joliat 1973; [14] Johnson Yacc CSTR 32
-added; §4.3 and §7 sentences reworded. Joliat and the yacc TR are
-search-verified only — read before camera-ready; AEH 1973 is the fallback.
+added; §4.3 and §7 sentences reworded. A subsequent primary read verified
+the yacc report's per-state default reduction. Joliat's specific
+error-entry attribution remains unverified and has been removed from the
+paper; AEH 1973 remains the fallback if that report cannot be obtained.
 
-### Agent 5 — Yang arXiv:2110.00776 (sonnet, PDFs blocked). RECONSTRUCTED
+### Agent 5 — Yang arXiv:2110.00776 (sonnet, PDFs blocked). RECONSTRUCTED, THEN PRIMARY-VERIFIED
 
 Abstract confirmed verbatim (recurred identically across queries):
 node-coloring reduced *indirectly* — graph → CFG → canonical LR(1)
@@ -277,9 +300,13 @@ successors merged). KEY FINDING: the hardness is merge-selection on a
 GIVEN, deterministically built machine; no "don't-care/completion/
 non-transitive compatibility" language could be found in Yang's own text —
 that framing was ours. Possible earlier version: "Extended LALR(1)
-Parsing," ICAS 2018 (moderate confidence). Before camera-ready: pull the
-PDF and confirm the numbered theorem, the state-count formula, and the
-absence of completion language.
+Parsing," ICAS 2018 (moderate confidence).
+
+The later primary read confirmed the graph-to-grammar reduction, the
+4n^2−2n+3 state count, pairwise conflict and successor constraints, and the
+absence of completion language. It also caught a terminology error outside
+the agent's reconstruction: a nonoptimal quotient is potentially *finer*,
+not coarser, than the quotient produced by a better merge scheme.
 
 Action taken: §4.5 rewritten to state Yang's result as reconstructed, with
 the completion equivalence explicitly marked as our observation; related-
@@ -288,8 +315,9 @@ Yang's optimum).
 
 ### Sweep cost and residue
 
-~334k subagent tokens, five agents, ~7 minutes wall-clock. Remaining
-before submission: primary reads of Yang, Joliat, yacc CSTR 32; C++ row
+~334k subagent tokens, five agents, ~7 minutes wall-clock. Subsequent audit
+completed the primary reads of Yang and yacc CSTR 32. Remaining before
+submission: a primary read of Joliat; C++ row
 into the automated Bison regression; the old 42/100 sweep's unfinished
 votes (Pager, Honalee, IELR — none currently load-bearing).
 

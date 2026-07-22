@@ -400,9 +400,8 @@ new edge can postpone rejection but cannot create an accepted sentence.
 ### 4.3 Completion as a default-reduction policy
 
 The transformation in this step is not new. Replacing error entries by
-reductions is the classical **default reduction**, proposed in the early
-table-compaction literature and implemented since the original yacc
-[11, 14]: a generator elects one
+reductions is the classical **default reduction**, implemented in the
+original yacc [14] and documented today by Bison [12]: a generator elects one
 reduction of a state to stand for every unspecified lookahead, accepting
 delayed error detection in exchange for compact rows. Bison performs exactly
 this transformation under `%define lr.default-reduction` [12]. For the
@@ -431,10 +430,10 @@ machine under the policies of §4.1. A resolution policy that deliberately
 maps *viable* lookaheads to error — yacc's `%nonassoc` — would create
 error cells that this argument does not cover, and such cells must be
 marked non-fillable, exactly as §5's virtual-twin guard already does for
-deferred cells. This is not hypothetical: Bison documents the same
-interaction for its own default reductions, which can mask `%nonassoc`
-error actions and delay detection, and provides lookahead correction
-(`parse.lac`) specifically to repair it [12].
+deferred cells. This is not hypothetical: Bison identifies `%nonassoc`,
+default reductions in inconsistent states, and parser-state merging as
+distinct causes of delayed or inaccurate syntax-error behavior, and provides
+lookahead correction (`parse.lac`) to address them [12].
 
 Concretely, Gazelle groups resolved item states by LR(0) core. Within a
 group, for every terminal *a*, it inspects the reduce targets already
@@ -545,7 +544,7 @@ with disjoint reduce lookaheads is completing each with the other's entries;
 this completion view is ours, not Yang's.) Gazelle does not attack that
 problem. It fixes the inserted entries once, by the unanimous-reduction
 rule, and computes the unique coarsest quotient of the resulting completed
-transition system — polynomial and deterministic, but possibly coarser than
+transition system — polynomial and deterministic, but possibly finer than
 what a different completion, or a cleverer merge, could reach.
 
 The word “minimize” in this paper always refers to this fixed completed
@@ -608,14 +607,17 @@ through minimization; the completion guard above enforces the same invariant
 at the one place completion could otherwise violate it, by manufacturing a
 deferred question where the canonical machine had an unconditional answer.
 
-To our knowledge, no deterministic LR parser generator offers runtime
-operator precedence: a survey of the documentation of thirteen generators
-(Bison, Byacc, Menhir, Happy, CUP, Lemon, Hyacc, LALRPOP, PLY, SLY, Racc,
-Rustemo, Jison) found only generation-time precedence declarations, with
-parse-time precedence appearing solely in GLR systems — tree-sitter's
-dynamic precedence, Bison's `%dprec` — where it ranks forked parses, and in
-hand-written Pratt-style parsers outside the generator setting. Appendix A
-records the survey.
+A documentation survey found one close precedent among fourteen LR parser
+generators. Parglare lets productions retain dynamically filtered actions and
+calls a user-supplied predicate at parse time; its manual demonstrates
+runtime-defined operator precedence with the deterministic `Parser` API.
+Compared with that general callback, Gazelle carries precedence on tokens,
+performs the comparison directly in the generated parser on one stack, and
+uses its real/virtual transition representation to preserve the deferred
+choice through completion and minimization. Each of the other thirteen
+surveyed generators documents only generation-time precedence in
+deterministic LR mode. GLR systems also offer parse-time ranking of forked
+parses. Appendix A records the survey and its scope.
 
 Deferral imposes a different proof obligation on a merge-first construction.
 IELR's inadequacy analysis is designed to preserve the result of static
@@ -792,11 +794,11 @@ small rather than shrinking it afterwards. That route and the post-hoc one
 taken here — materialize, resolve, complete, quotient — are complementary
 rather than competing.
 
-Default reductions are long-standing table-compression practice: Joliat
-proposed treating error entries as replaceable in LR tables [11], yacc's
-generated tables carried per-state defaults from the start [14], and Bison
-documents the technique today together with the delayed error detection it
-causes [12]. Their classical use compresses one
+Default reductions are long-standing table-compression practice: Joliat's
+report is an early treatment of reduced matrix representations for LR parser
+tables [11], yacc's generated tables carried per-state defaults from the
+start [14], and Bison documents the technique today together with the delayed
+error detection it causes [12]. Their classical use compresses one
 state's row. §4.3 reuses the identical transformation with a selection
 policy chosen instead to align rows across same-core states — which is what
 makes the latent equivalence visible to partition refinement.
@@ -930,12 +932,11 @@ Technical Report 32, Bell Laboratories, Murray Hill, NJ, 1975.
 
 ## Appendix A. Survey: precedence support in parser generators
 
-This appendix records the survey behind §5's claim that no deterministic LR
-parser generator offers runtime operator precedence. The survey is
-documentation-level: for each tool, the official manual or reference was
-checked (July 2026) for any mechanism that keeps both actions of a
-shift/reduce conflict in the deterministic tables and decides between them
-at parse time from data carried by the token. Generation-time precedence
+This appendix records the documentation survey behind §5's comparison. For
+each tool, the official manual or reference was checked (July 2026) for a
+mechanism that keeps both actions of a shift/reduce conflict in deterministic
+LR tables and decides between them at parse time from input-dependent data.
+Generation-time precedence
 declarations (`%left`, `%right`, `%nonassoc`, `%prec`, and equivalents) do
 not qualify: they fix each conflicted cell before the parser runs.
 Mechanisms that fork the parse and rank the survivors are recorded
@@ -959,22 +960,26 @@ deterministic stack.
 | Racc | LALR | precedence table | generation |
 | Rustemo (LR mode) | LR | static declarations | generation |
 | Jison (LR modes) | SLR/LALR/LR | `%left`/`%right`/`%nonassoc` | generation |
+| parglare `Parser` | LR(1) | user `dynamic_filter` over retained actions | parse time |
 
-None of the thirteen documents a table entry that defers a shift/reduce
-choice to token data.
+Parglare is the one deterministic precedent found. Productions marked
+`dynamic` retain candidate shift and reduce actions, and a predicate called
+during parsing accepts or rejects each action using the parsing context. Its
+manual's example implements input-dependent operator precedence. This is more
+general than Gazelle's built-in precedence comparison, but it establishes
+that runtime precedence on a deterministic LR stack is not itself novel. The
+other thirteen surveyed tools do not document such a table entry.
 
 ### A.2 Parse-time precedence in GLR systems
 
 Generalized parsers do offer parse-time precedence, by a different
 mechanism: the conflicted cell forks the parse, and precedence ranks the
-surviving alternatives. Tree-sitter's `prec.dynamic` is "applied at runtime
-instead of at parser generation time … if multiple parses end up
-succeeding, Tree-sitter will pick the subtree whose corresponding rule has
-the highest total dynamic precedence." Bison's GLR mode "tries to pick one
-of the actions by first finding one whose rule has the highest dynamic
-precedence, as set by the `%dprec` declaration." Lezer similarly permits
-declared ambiguities resolved during its GLR-style parse, and Happy has a
-GLR mode with semantic disambiguation. In each case the mechanism
+surviving alternatives. Tree-sitter's `prec.dynamic` assigns rule weights at
+runtime and selects the successful subtree with the greatest accumulated
+weight. Bison's GLR mode uses `%dprec` to prefer the surviving action with the
+highest declared dynamic precedence [12]. Lezer similarly permits declared
+ambiguities resolved during its GLR-style parse, and Happy has a GLR mode
+with semantic disambiguation. In each case the mechanism
 presupposes nondeterministic parsing; none applies to the tool's
 deterministic LR tables.
 
@@ -986,18 +991,40 @@ reader, an operator-precedence parser. Pratt parsing and precedence
 climbing decide from a binding-power table at parse time, in hand-written
 recursive descent. Swift's `precedencegroup` and Haskell's fixity
 declarations feed precedence resolution phases inside those compilers.
-These confirm that the *language feature* is in demand; what the survey did
-not find is the feature provided by a deterministic LR generator, which is
-the setting where §5's both-branches invariant must be engineered.
+These confirm that the *language feature* is in demand. Parglare additionally
+shows that a general runtime action filter can provide it in a deterministic
+LR parser. Gazelle's narrower contribution is the token-carried table
+mechanism and its preservation through completion and minimization.
 
 ### A.4 Scope
 
-The survey establishes absence of a documented feature, not impossibility;
-a tool with an undocumented or more recent mechanism would be a
-counterexample, and the authors would welcome one. Sources: the tools'
-official manuals — gnu.org/software/bison (3.8.2), gallium.inria.fr/~fpottier/menhir,
-haskell.org/happy, www2.cs.tum.edu/projects/cup, sqlite.org/lemon.html,
-hyacc.sourceforge.net, github.com/lalrpop/lalrpop, dabeaz.com/ply,
-sly.readthedocs.io, ruby-doc.org (Racc), igordejanovic.net/rustemo,
-gerhobbelt.github.io/jison, tree-sitter.github.io, lezer.codemirror.net,
-swi-prolog.org (`op/3`).
+The survey records documented mechanisms in the tools and versions examined;
+its negative entries do not establish impossibility, and an undocumented or
+later mechanism would change the comparison.
+
+The deterministic-generator rows were checked against the following official
+manuals and project references: GNU Bison 3.8.2 [12]; [Berkeley Yacc's
+manual](https://invisible-island.net/byacc/manpage/yacc.html); the [Menhir
+Reference Manual](https://gallium.inria.fr/~fpottier/menhir/manual.html),
+version 20260209, §§4.1.4, 6, and 18; Happy's [LR precedence
+documentation](https://haskell-happy.readthedocs.io/en/latest/using.html#how-to-specify-precedences)
+and [GLR documentation](https://haskell-happy.readthedocs.io/en/2.0.2/glr.html);
+the [CUP manual](https://www.cs.princeton.edu/~appel/modern/java/CUP/manual.html);
+the [Lemon documentation](https://sqlite.org/lemon.html); the [Hyacc project
+documentation](https://hyacc.sourceforge.net/); the [LALRPOP expression
+tutorial](https://lalrpop.github.io/lalrpop/tutorial/004_full_expressions.html);
+the [PLY documentation](https://ply.readthedocs.io/en/latest/ply.html); the
+[SLY documentation](https://sly.readthedocs.io/en/latest/sly.html); the [Racc
+reference](https://ruby.github.io/racc/index.html); the [Rustemo grammar
+documentation](https://igordejanovic.net/rustemo/grammar_language.html); the
+[Jison
+documentation](https://gerhobbelt.github.io/jison/docs/); and parglare's
+[dynamic-disambiguation
+documentation](https://igordejanovic.net/parglare/stable/disambiguation/#dynamic-disambiguation-filter).
+
+The comparisons outside deterministic LR use tree-sitter's [grammar DSL
+reference](https://tree-sitter.github.io/tree-sitter/creating-parsers/2-the-grammar-dsl.html),
+the [Lezer guide](https://lezer.codemirror.net/docs/guide/#ambiguity), and
+SWI-Prolog's [`op/3`
+reference](https://www.swi-prolog.org/pldoc/man?predicate=op/3). All web
+sources were accessed in July 2026.
