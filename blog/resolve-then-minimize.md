@@ -631,12 +631,14 @@ generator could emit a loop that asks arbitrary user code for every action,
 and that code could implement the canonical parser itself. Gazelle's `prec`
 resolver is table-local: each decision compares the incoming token's
 precedence with precedence already carried on the LR stack. Gazelle's
-`conflict` terminals are, by this definition, an unrestricted hook — the
-lexer may consult arbitrary state. The boundary they respect is a different
-one: the invariant below guarantees that a deferred cell exists only where
-the canonical machine has the question, so the unrestricted answer is
-solicited only at genuine grammar choice points, never to reconstruct
-context the table discarded.
+`conflict` terminals are not table-local in how their one fixed per-token
+answer is computed: the lexer may consult arbitrary state. The boundary they
+respect is a different one: the invariant below guarantees that a deferred
+cell exists only where the canonical machine has the question. The
+unrestricted answer is therefore solicited only at canonical choice points,
+never merely because merging converted an unconditional canonical action into
+a question. The answer may still depend on semantic state intentionally kept
+outside the grammar.
 
 Deferral makes the advantage of the construction order concrete. A deferred
 cell may contain only actions available in the corresponding canonical cell;
