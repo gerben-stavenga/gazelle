@@ -98,12 +98,12 @@
 \IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
 \urlstyle{same}
 \hypersetup{
-  pdftitle={Resolve, Complete, Then Minimize: LR Parse Tables as Automata},
+  pdftitle={Resolve, Complete, Then Minimize: Conflict-Preserving LR Tables as Automata},
   pdfauthor={Gerben Stavenga},
   hidelinks,
   pdfcreator={LaTeX via pandoc}}
 
-\title{Resolve, Complete, Then Minimize: LR Parse Tables as Automata}
+\title{Resolve, Complete, Then Minimize: Conflict-Preserving LR Tables as Automata}
 \author{Gerben Stavenga\\
 \texttt{stavenga@gmail.com}}
 \date{}
@@ -113,13 +113,17 @@
 
 \begin{abstract}
 
-Canonical LR(1) construction preserves the context needed for correct
-conflict resolution, but its tables often contain too many states to
-ship. Practical generators therefore merge states early and then prevent
-or repair changes caused by the merge. This paper explores the opposite
-order: construct the canonical automaton, resolve conflicts there,
-complete selected error entries, and minimize only the resulting
-behavior.
+Many useful LR grammars are intentionally conflicting. A single
+expression rule such as \texttt{expr = expr OP expr \textbar{} atom} is
+often clearer than a hierarchy of precedence nonterminals, and the
+dangling-else grammar is naturally stated with a shift policy. In such
+grammars, conflict resolution is part of the language semantics: it
+selects the parse tree. Practical generators nevertheless merge states
+before resolving conflicts because canonical LR(1) tables can be large.
+The merge can create conflicts, or move a real conflict and its
+resolution into a context where the canonical parser had an
+unconditional action. This paper asks how to compact an LR table without
+changing where its semantic choices occur or how they are decided.
 
 The key representation encodes \texttt{reduce\ r\ on\ a} as an ordinary
 transition labeled \texttt{a} into a state distinguished by production
@@ -129,12 +133,11 @@ transition system. Subset construction removes nondeterminism in
 incompatible answers about \emph{what the parser should do}: item and
 reduce nodes together encode a shift/reduce conflict, while two reduce
 nodes encode a reduce/reduce conflict. Resolution classifies this output
-nondeterminism before context is discarded. A conservative completion
-then aligns reductions across same-core states, and ordinary partition
-refinement computes the quotient. Completion is the classical
-default-reduction transformation under a per-terminal, alignment-driven
-selection policy. It may delay errors but preserves accepted-input
-action traces.
+nondeterminism before context is discarded. Gazelle resolves or
+explicitly defers this output nondeterminism in the canonical machine. A
+conservative completion then aligns reductions across same-core states,
+and ordinary partition refinement computes the quotient. Completion may
+delay errors but preserves accepted-input action traces.
 
 Gazelle implements this pipeline using the same generic automaton module
 as its lexer generator. On five tractable grammars, its resolved
@@ -150,25 +153,42 @@ comparison in approximately six seconds; Bison\textquotesingle s
 canonical mode did not finish within seven minutes. Equality of final
 state counts remains evidence about compactness, not a claim that the
 two final constructions are isomorphic or occupy the same number of
-bytes. The result is a simpler route to a canonical-LR-equivalent parser
-whose state count, on the bare grammars evaluated here, is the same as
-IELR.
+bytes. The result is a direct route to a compact,
+canonical-LR-equivalent parser that preserves intentional conflict
+semantics; on the bare grammars evaluated here, its state count is the
+same as IELR.
 
 \end{abstract}
 
 \hypertarget{1-introduction}{%
 \section{1. Introduction}\label{1-introduction}}
 
-Canonical LR(1) gives a parser generator an attractive semantic
-baseline. Its states retain the complete one-token right context derived
-from the grammar, so a conflict is inherent in the grammar rather than
-introduced by table construction. If a generator resolves conflicts in
-this automaton, the resolution is applied in precisely the contexts in
-which each action arose.
+LR conflicts are often presented as defects to eliminate from a grammar.
+In practice, many are deliberate. The compact expression grammar
+\texttt{expr = expr OP expr \textbar{} atom} exposes the operator
+structure directly and delegates precedence and associativity to an
+explicit policy. The canonical dangling-else grammar similarly states
+the syntactic ambiguity plainly and delegates the choice to a shift
+policy. Refactoring either grammar into a conflict-free hierarchy is
+possible, but can make the grammar longer, less direct, and less useful
+to clients that want to choose among the actions dynamically.
 
-The difficulty is size. The canonical automaton for the SQLite grammar
-used in this paper contains 66,539 item sets. Its IELR automaton has
-1,340 states.
+For an intentional conflict, resolution is not diagnostic cleanup. It is
+a semantic decision that selects a parse tree. A correct compaction must
+therefore preserve more than the accepted language: it must not create,
+erase, relocate, or change the actions of a canonical conflict. This is
+the central problem of the paper.
+
+Canonical LR(1) supplies the reference behavior. Its states retain the
+complete one-token right context derived from the grammar, so every
+action---and every conflict between actions---occurs in precisely the
+context that produced it. Resolving or explicitly deferring conflicts in
+this automaton fixes the semantic choices before any contexts are
+combined.
+
+The engineering pressure to combine them is size. The canonical
+automaton for the SQLite grammar used in this paper contains 66,539 item
+sets; its IELR automaton has 1,340 states.
 
 Size here is a question about how many states the machine has, not about
 how the eventual action/goto matrix is packed into bytes. Sparse-row
@@ -180,10 +200,12 @@ encode, and Gazelle repurposes that same kind of alteration to expose
 state equivalence. This paper concerns the state-count objective.
 
 The two-orders-of-magnitude gap explains the usual construction order:
-build or
-approximate the small machine first, then perform conflict analysis on
-it. Unfortunately, merging LR(1) contexts can create new conflicts, and
-it can also change how a real conflict is resolved.
+build or approximate the small machine first, then perform conflict
+analysis on it. For conflict-free grammars, compatibility-based merging
+can often recover much of this reduction directly. The difficult case is
+the one programmers commonly want: a grammar that already contains
+meaningful conflicts. Merging LR(1) contexts can create additional
+conflicts, and it can also change how a real conflict is resolved.
 Pager\textquotesingle s method restricts construction-time merges to
 compatible states {[}3{]}. IELR begins from LALR and splits states whose
 merges would alter canonical-LR behavior {[}4{]}. These algorithms
@@ -222,28 +244,30 @@ parser\textquotesingle s answer deterministic: that residual choice is
 the conflict. Reduce states are distinguished in the initial partition
 during minimization.
 
-This paper makes four contributions:
+This paper makes four contributions centered on conflict fidelity:
 
 \begin{enumerate}
 \def\labelenumi{\arabic{enumi}.}
 \tightlist
 \item
-  It gives an item-NFA encoding in which the complete LR table,
-  including reductions, is one labeled transition system.
+  It gives an item-NFA encoding in which every candidate LR action,
+  including reductions, is represented in one labeled transition
+  system.
 \item
-  It identifies LR conflicts with output nondeterminism remaining in
-  subset states after transition nondeterminism has been eliminated.
+  It identifies LR conflicts with output nondeterminism remaining after
+  transition nondeterminism has been eliminated, so conflicts can be
+  resolved or deliberately deferred in their canonical contexts.
 \item
-  It shows that the classical default-reduction transformation, under a
-  new alignment-driven selection policy, exposes common LALR-style
-  merges to generic partition refinement while preserving valid-input
-  parser behavior.
+  It gives an alignment-driven completion that replaces only selected
+  error entries with unanimous same-core reductions, exposing common
+  LALR-style equivalences to generic partition refinement while
+  preserving resolved valid-input behavior.
 \item
   It checks the resolved canonical machine against
   Bison\textquotesingle s canonical-LR output by bisimulation, matches
   Bison\textquotesingle s IELR state counts after completion and
-  minimization, and describes runtime precedence as an application of
-  the representation.
+  minimization, and uses runtime precedence as a case study in why the
+  canonical action set at each conflicted cell must survive compaction.
 \end{enumerate}
 
 The claim is deliberately narrower than global minimality. Finding the
@@ -300,9 +324,18 @@ conflict occurs if a shift is also present in that cell, and a
 reduce/reduce conflict occurs if two completed items install different
 reductions there.
 
-\hypertarget{21-why-merge-first-construction-is-difficult}{%
-\subsection{2.1 Why merge-first construction is
-difficult}\label{21-why-merge-first-construction-is-difficult}}
+Those conflicts need not indicate a poorly designed grammar. Expression
+precedence and dangling else are canonical cases in which the
+conflicting production structure is simpler and more legible than its
+conflict-free expansion. A precedence, associativity, or shift
+declaration supplies the missing semantic choice. The minimization
+problem studied here is therefore not how to eliminate such conflicts,
+but how to preserve their exact action sets and resolution contexts while
+merging everything else that is behaviorally indistinguishable.
+
+\hypertarget{21-how-merging-changes-conflicts}{%
+\subsection{2.1 How merging changes
+conflicts}\label{21-how-merging-changes-conflicts}}
 
 LALR merges canonical states with the same LR(0) core: the same
 \texttt{(production,\ dot)} pairs after lookaheads are erased. Consider
@@ -827,11 +860,11 @@ sound LR tables: Yang\textquotesingle s optimum ranges over all
 conflict-free merges of the canonical machine, and nothing here claims
 to reach it.
 
-\hypertarget{5-runtime-precedence-as-an-application}{%
-\section{5. Runtime precedence as an
-application}\label{5-runtime-precedence-as-an-application}}
+\hypertarget{5-runtime-precedence-as-a-conflict-case-study}{%
+\section{5. Runtime precedence as a conflict case
+study}\label{5-runtime-precedence-as-a-conflict-case-study}}
 
-Some conflicts are intentional. An expression rule such as
+Expression parsing makes the paper's premise concrete. A rule such as
 
 \begin{Shaded}
 \begin{Highlighting}[]
@@ -839,11 +872,14 @@ Some conflicts are intentional. An expression rule such as
 \end{Highlighting}
 \end{Shaded}
 
-leaves associativity and precedence to a language policy. Traditional
+leaves associativity and precedence to a language policy while keeping
+the grammar compact and close to its conceptual structure. Traditional
 generators resolve each conflicted table cell statically. Gazelle can
 instead defer selected shift/reduce choices to token data, allowing one
 terminal to represent operators whose precedence is known only at
-runtime.
+runtime. This works only if compaction preserves the canonical question:
+runtime policy must choose among actions that genuinely co-occurred in
+that canonical cell, never among actions brought together by a merge.
 
 All non-plain terminal declarations use the same representational
 device. For a modified terminal \texttt{OP}, construction creates a
@@ -1315,13 +1351,17 @@ should be brought into agreement.
 \hypertarget{9-conclusion}{%
 \section{9. Conclusion}\label{9-conclusion}}
 
-The hard part of minimizing an LR state machine is not merely deciding
-which states look similar. It is preserving the meaning of conflicts
-while information is discarded. Merge-first constructions must predict
-or repair that interaction. Gazelle avoids it by changing both the order
-of operations and the representation on which they operate. Packing the
-resulting table compactly in memory is an important but orthogonal
-engineering step.
+Intentional conflicts are not defects left over after grammar design.
+They are often the clearest way to state a language: expression
+precedence and dangling else are familiar examples. Their resolution is
+part of the grammar's semantics. The hard part of minimizing an LR state
+machine is therefore not merely deciding which states look similar, but
+preserving where those conflicts occur, which actions they contain, and
+how they are decided while context is discarded. Merge-first
+constructions must predict or repair that interaction. Gazelle instead
+changes both the order of operations and the representation on which
+they operate. Packing the resulting table compactly in memory remains
+important but orthogonal.
 
 Encoding \texttt{reduce\ r\ on\ a} as an edge labeled \texttt{a} into
 reduce state \texttt{R\_r} makes the complete parse table a labeled
@@ -1332,15 +1372,15 @@ completion exposes safe equivalences, and generic partition refinement
 computes the coarsest quotient of the completed resolved machine.
 
 The result is not a solution to globally minimal LR table construction.
-It is a simpler construction of a canonical-LR-equivalent parser whose
-state counts, on all six modifier-stripped grammars evaluated here,
-equal those produced by IELR. Production grammars with additional
-resolution semantics may retain more states, and equal state counts do
-not imply equal encoded bytes. More broadly, the construction
-illustrates a useful engineering principle: when a domain-specific
-object nearly fits a mature generic algorithm, changing the
-representation may be more effective than inventing another
-domain-specific algorithm.
+It is a direct construction of a conflict-preserving,
+canonical-LR-equivalent parser whose state counts, on all six
+modifier-stripped grammars evaluated here, equal those produced by IELR.
+Production grammars with additional resolution semantics may retain more
+states, and equal state counts do not imply equal encoded bytes. More
+broadly, the construction illustrates a useful engineering principle:
+when a domain-specific object nearly fits a mature generic algorithm,
+changing the representation may be more effective than inventing
+another domain-specific algorithm.
 
 \hypertarget{acknowledgments-and-ai-assistance}{%
 \section{Acknowledgments and AI
