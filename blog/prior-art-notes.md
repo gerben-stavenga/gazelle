@@ -134,9 +134,11 @@ Claims under test:
   1974 — cited [11] for default reductions/table compaction; confirm it
   actually discusses default actions on error entries and delayed error
   detection.
-- Bison manual `%define lr.default-reduction` cited [12] — confirm exact
-  section name and semantics (most/consistent/accepting values); also check
-  bison's documented %nonassoc caveat matches our §4.3 non-fillable note.
+- Bison manual [12]: **VERIFIED 2026-07-22** against 3.8.2 — §5.8.1 LR Table
+  Construction (lr.type: lalr/ielr/canonical-lr), §5.8.2 Default Reductions
+  (lr.default-reduction: most/consistent/accepting; delayed-detection quote
+  confirmed), §5.8.3 LAC (parse.lac), §5.9 GLR (%dprec GLR-only). Manual
+  documents the %nonassoc-masking caveat explicitly — now cited in §4.3.
 - Also still queued: extended-production/one-more-dot novelty search; Yang
   formulation check (machine-measured vs grammar-measured).
 - The draft no longer claims that no deterministic LR generator offers runtime

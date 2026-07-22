@@ -430,7 +430,10 @@ machine under the policies of §4.1. A resolution policy that deliberately
 maps *viable* lookaheads to error — yacc's `%nonassoc` — would create
 error cells that this argument does not cover, and such cells must be
 marked non-fillable, exactly as §5's virtual-twin guard already does for
-deferred cells.
+deferred cells. This is not hypothetical: Bison documents the same
+interaction for its own default reductions, which can mask `%nonassoc`
+error actions and delay detection, and provides lookahead correction
+(`parse.lac`) specifically to repair it [12].
 
 Concretely, Gazelle groups resolved item states by LR(0) core. Within a
 group, for every terminal *a*, it inspects the reduce targets already
@@ -896,7 +899,9 @@ stack activity,” *The Computer Journal* 48(5), pp. 565–587, 2005.
 6(2), pp. 99–124, 1974.
 
 [12] Free Software Foundation, *Bison: The Yacc-compatible Parser Generator*,
-manual sections “Generalized LR Parsing,” “LR Table Construction,” and
-“Default Reductions” (`%dprec`, `%define lr.default-reduction`).
+version 3.8.2, manual §5.8.1 “LR Table Construction,” §5.8.2 “Default
+Reductions,” §5.8.3 “LAC,” and §5.9 “Generalized LR (GLR) Parsing”
+(`%define lr.type`, `%define lr.default-reduction`, `%define parse.lac`,
+`%dprec`).
 
 [13] J. Zimmerman, “Practical LR parser generation,” arXiv:2209.08383, 2022.
