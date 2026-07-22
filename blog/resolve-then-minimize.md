@@ -47,6 +47,14 @@ resolution is applied in precisely the contexts in which each action arose.
 
 The difficulty is size. The canonical automaton for the SQLite grammar used
 in this paper contains 66,539 item sets. Its IELR automaton has 1,340 states.
+This is a question about how many states the machine has, not how the eventual
+action/goto matrix is packed into bytes. Sparse-row encodings, shared defaults,
+and similar storage techniques remain valuable. Pure encodings of a fixed
+matrix are orthogonal and can be applied after either machine has been
+constructed. Default reductions sit at the boundary: they alter error behavior
+to make rows cheaper to encode, and Gazelle repurposes that same kind of
+alteration to expose state equivalence. This paper concerns the state-count
+objective.
 This gap explains the usual construction order: build or approximate the small
 machine first, then perform conflict analysis on it. Unfortunately,
 merging LR(1) contexts can create new conflicts, and it can also change how a
@@ -179,7 +187,7 @@ distinguishable.
 
 ### 2.2 Observable behavior
 
-Table compression requires a precise boundary. For this paper, two parsers
+State minimization requires a precise behavioral boundary. For this paper, two parsers
 have the same valid-input behavior when, for every token string accepted by
 the canonical resolved parser, they perform the same ordered sequence of
 shifts and reductions and therefore construct the same parse tree. They must
@@ -400,19 +408,27 @@ impossible lookahead would witness a valid continuation of the original
 state, contradicting the condition under which the gap was filled. Thus the
 new edge can postpone rejection but cannot create an accepted sentence.
 
-### 4.3 Completion as a default-reduction policy
+### 4.3 Completion versus table packing
 
-The transformation in this step is not new. Replacing error entries by
-reductions is the classical **default reduction**, implemented in the
-original yacc [14] and documented today by Bison [12]: a generator elects one
-reduction of a state to stand for every unspecified lookahead, accepting
-delayed error detection in exchange for compact rows. Bison performs exactly
-this transformation under `%define lr.default-reduction` [12]. For the
-pre-minimization completion, Gazelle changes only the *selection policy*.
-Classical defaults choose one reduction per state, to compress that state's
-row; Gazelle chooses per terminal, and aligns the choices across states with
-the same LR(0) core, to make whole rows equal — compression of the state *set*
-rather than of a single row.
+Two different compression problems are easy to conflate. **State
+minimization** reduces the number of states in the parser automaton; this is
+the subject of the paper. **Table packing** encodes the action/goto matrix of
+an already chosen automaton in fewer bytes. Joliat's reduced-matrix work [11]
+belongs to the second problem. Yacc's per-state defaults [14] and Bison's
+default-reduction options [12] are more closely related to this paper: they
+first alter the partial machine, treating selected error cells as reductions,
+so the altered rows admit a sparser representation. Their objective is still
+row storage rather than state count, but their mechanism is semantic
+completion rather than pure encoding.
+
+Gazelle's pre-minimization completion has the same cell-level effect as a
+default reduction: an error entry is treated as a reduction already performed
+elsewhere in that state. The purpose and selection policy differ. A classical
+default chooses one reduction per state so its row can be stored compactly.
+Gazelle chooses per terminal across same-core states so partition refinement
+can identify equivalent states. The former reduces the representation of a
+fixed matrix; the latter changes the completed transition system presented to
+the minimizer and thereby reduces the state set.
 Recognition and accepted-input action traces cannot tell these insertions
 apart: in both, an error entry is replaced by a reduction that no successful
 parse consults. Failed-parse behavior can distinguish them. The policies may
@@ -425,9 +441,11 @@ and (ii) it extends the lookahead set of a reduction the state already
 performs. Condition (ii) holds for Gazelle's rule because the donor sibling
 has the same LR(0) core, so the donated reduction's completed item is
 already present in the receiving state; completion never imports a
-reduction from elsewhere. Classical per-state defaults are therefore a
-special case of the insertions used here, and the preservation argument of
-§4.4 covers both. One assumption deserves note: condition (i) reads an
+reduction from elsewhere. When both techniques are modeled as completed
+transition relations, classical per-state defaults are a special case of
+these insertions, so the preservation argument of §4.4 covers their semantic
+effect as well. This shared model does not make their compression objectives
+the same. One assumption deserves note: condition (i) reads an
 error entry as evidence of non-viability, which is true of the canonical
 machine under the policies of §4.1. A resolution policy that deliberately
 maps *viable* lookaheads to error — yacc's `%nonassoc` — would create
@@ -456,12 +474,13 @@ ways to complete error entries, nor does it claim that its choice produces the
 smallest possible parser. It chooses a deterministic completion justified by
 same-core context and unanimous existing reductions.
 
-The two selection policies are not rivals; Gazelle uses both, at different
-stages. Alignment-driven insertion runs before minimization, where its job
-is state-count reduction. The classical per-state default runs afterwards,
-at table encoding: each state elects its most frequent reduction and the
-encoded row omits the entries that match it — ordinary row compression on
-the already-minimized machine.
+The two objectives remain distinct, and Gazelle uses the shared mechanism at
+two stages. Alignment-driven insertion runs before minimization to reduce the
+number of states. Per-state defaulting runs afterwards: each minimized state
+elects its most frequent reduction, changes remaining error cells to that
+default on doomed paths, and omits matching entries from the packed row. The
+first use is the paper's algorithmic contribution; the second is the classical
+row-sparsification use of the same behavioral relaxation.
 
 After completion, Gazelle runs iterative partition refinement. The initial
 partition places all item states together and places reduce states in classes
@@ -897,14 +916,18 @@ small rather than shrinking it afterwards. That route and the post-hoc one
 taken here — materialize, resolve, complete, quotient — are complementary
 rather than competing.
 
-Default reductions are long-standing table-compression practice: Joliat's
-report is an early treatment of reduced matrix representations for LR parser
-tables [11], yacc's generated tables carried per-state defaults from the
-start [14], and Bison documents the technique today together with the delayed
-error detection it causes [12]. Their classical use compresses one
-state's row. §4.3 reuses the identical transformation with a selection
-policy chosen instead to align rows across same-core states — which is what
-makes the latent equivalence visible to partition refinement.
+Table packing is a separate objective. Joliat studies reduced matrix
+representations for LR parser tables [11], which concerns compactly encoding a
+chosen table. Default reductions are the important bridge: the original yacc
+report documents per-state defaults [14], and Bison documents both the option
+and its delayed error detection today [12]. A default is not merely an
+encoding of the unchanged machine; it replaces error behavior by reductions
+so the resulting row can be stored sparsely. Gazelle reuses that behavioral
+relaxation with an alignment-driven selection policy, before minimization, to
+make states equivalent rather than merely to make individual rows sparse.
+It subsequently applies the classical per-state policy to the minimized
+machine for row storage. Thus the transformation is directly related, while
+the optimization objective is different.
 
 Yang proves that minimizing LR(1) state machines is NP-hard [5]. As §4.5
 explains, Gazelle computes the coarsest behavioral quotient of one
@@ -960,11 +983,12 @@ agreement.
 
 ## 9. Conclusion
 
-The hard part of compact LR tables is not merely deciding which states look
-similar. It is preserving the meaning of conflicts while information is
-discarded. Merge-first constructions must predict or repair that interaction.
-Gazelle avoids it by changing both the order of operations and the
-representation on which they operate.
+The hard part of minimizing an LR state machine is not merely deciding which
+states look similar. It is preserving the meaning of conflicts while
+information is discarded. Merge-first constructions must predict or repair
+that interaction. Gazelle avoids it by changing both the order of operations
+and the representation on which they operate. Packing the resulting table
+compactly in memory is an important but orthogonal engineering step.
 
 Encoding `reduce r on a` as an edge labeled `a` into reduce state `R_r` makes
 the complete parse table a labeled transition system. Subset construction
@@ -983,6 +1007,20 @@ the construction illustrates a useful engineering principle: when a
 domain-specific object nearly fits a mature generic algorithm, changing the
 representation may be more effective than inventing another domain-specific
 algorithm.
+
+## Acknowledgments and AI assistance
+
+This work originated during the ZeroMatter agentic coding hackathon.
+Generative-AI systems, including OpenAI Codex and Anthropic Claude, assisted
+with the implementation and review of Gazelle, the drafting and editing of
+this manuscript, and literature discovery and synthesis. Their use included
+generating and revising code and tests, proposing prose and structural edits,
+locating candidate prior work, and helping compare the paper's claims with
+available documentation and sources. The human author selected the research
+questions, made the final technical and editorial decisions, ran the reported
+experiments, reviewed the resulting code and manuscript, and takes
+responsibility for the accuracy and integrity of the work. The AI systems are
+not authors.
 
 ## References
 
