@@ -250,6 +250,33 @@ narrows Gazelle's contribution to its token-carried built-in comparison and
 the representation that preserves the choice through completion and
 minimization. Appendix A includes parglare and exact source links.
 
+Executable witness 2026-07-23 (user's hunch: parglare fails the subtle
+precedence case because of merge conflicts — CONFIRMED, sharpened; script
+blog/parglare_witness.py, parglare 0.21.1 in-sandbox):
+- Grammar S: 'a' M | 'b' M Z; M: E {dynamic} | E Z {dynamic}; E: 'x';
+  terminal Z {dynamic}. Canonical: a-context shifts z unconditionally;
+  b-context has genuine S/R on z. parglare merges the same-core states
+  (kernel lookaheads {STOP,Z} = union).
+- Default (prefer_shifts=True): the genuine question is silently resolved
+  to shift AT CONSTRUCTION despite dynamic markers — reduce M->E on z
+  absent from the table entirely; valid 'b x z' unparseable under EVERY
+  filter.
+- prefer_shifts=False: merged cell defers in BOTH contexts; 'a x z' and
+  'b x z' reach the same state with the same remaining input but need
+  opposite actions — SHIFT policy fails 'b x z', REDUCE policy fails
+  'a x z' (both clean SyntaxErrors on valid input). No filter of (state,
+  action, remaining input) can be correct; stack excavation would be
+  required.
+- parglare GLRParser parses all four (fork-and-die); the failure is
+  specific to deterministic deferral over merged tables.
+- Side findings: rejecting the sole candidate action crashes parglare
+  with unhandled IndexError; filter receives an all-None initialization
+  probe call; state-2 item lookaheads suggest FOLLOW-flavored sets.
+- Paper: Appendix A.4 added with the witness; §5 references it. This
+  upgrades the §5 architectural observation to a demonstrated failure
+  mode for THIS shape (one tool, one version, one grammar — scoped
+  accordingly in the text).
+
 Independent re-verification 2026-07-23 (primary docs via raw.githubusercontent):
 parglare's disambiguation page's worked example instantiates the
 deterministic class — `Parser(grammar, dynamic_filter=custom_disambiguation_filter)` —

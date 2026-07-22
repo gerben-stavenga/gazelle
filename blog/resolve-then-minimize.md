@@ -647,7 +647,13 @@ choice through completion and minimization. The faithfulness question also
 separates the two: parglare's filter selects among whatever actions its
 merged LALR tables retain, while Gazelle guarantees that every deferred
 alternative was available in the corresponding canonical cell — the
-invariant above and the obligation below. Each of the other thirteen
+invariant above and the obligation below. The distinction is observable:
+Appendix A.4 constructs a five-production grammar on which canonical LR(1)
+shifts a token unconditionally in one context and has a genuine deferred
+question on the same token in a same-core context; parglare's merged table
+gives one cell to both, and either erases the question at construction or
+asks it in both contexts, where every filter policy fails a valid input on
+one side. Each of the other thirteen
 surveyed generators documents only generation-time precedence in
 deterministic LR mode. GLR systems also offer parse-time ranking of forked
 parses. Appendix A records the survey and its scope.
@@ -1042,7 +1048,40 @@ shows that a general runtime action filter can provide it in a deterministic
 LR parser. Gazelle's narrower contribution is the token-carried table
 mechanism and its preservation through completion and minimization.
 
-### A.4 Scope
+### A.4 A witness: merging defeats the general filter
+
+To make the faithfulness distinction concrete, we constructed a
+five-production grammar and ran it against parglare 0.21.1
+(`blog/parglare_witness.py` in the repository):
+
+```text
+S: 'a' M | 'b' M Z;
+M: E {dynamic} | E Z {dynamic};
+E: 'x';
+terminals Z: 'z' {dynamic};
+```
+
+Canonical LR(1) gives the state reached by `a E` an unconditional shift on
+`z` — the completed `M -> E` carries lookahead `{EOF}` there — while the
+same-core state reached by `b E` has a genuine shift/reduce question on
+`z` (`b x z` must reduce, `b x z z` must shift). parglare's construction
+merges the two states and unions their lookaheads, so one cell answers for
+both contexts. Under the default shift preference, the question is
+resolved away at construction despite the `dynamic` markers, and the valid
+input `b x z` is unparseable under every filter. With
+`prefer_shifts=False` the merged cell defers — in both contexts: at the
+decision point, `a x z` and `b x z` present the same automaton state and
+the same remaining input yet require opposite actions, so a shift policy
+fails `b x z` and a reduce policy fails `a x z`. No filter that reads only
+the state, the candidate action, and the remaining input can be correct
+for both; recovering the answer requires walking the stack for left
+context the merge erased. A canonical-faithful table keeps the contexts
+apart — the `a` cell a plain shift, the `b` cell the one deferred entry —
+which is what §5's guard preserves through completion and minimization.
+The witness concerns this grammar and parglare 0.21.1; parglare's GLR
+parser, which forks instead of choosing, parses all four inputs.
+
+### A.5 Scope
 
 The survey records documented mechanisms in the tools and versions examined;
 its negative entries do not establish impossibility, and an undocumented or
