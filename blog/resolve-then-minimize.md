@@ -599,19 +599,17 @@ through minimization; the completion guard above enforces the same invariant
 at the one place completion could otherwise violate it, by manufacturing a
 deferred question where the canonical machine had an unconditional answer.
 
-To our knowledge, no deterministic LR parser generator offers runtime
-operator precedence; languages that need user-defined operators fall back to
-hand-written expression parsers or to generalized parsing. We do not think
-the gap is an accident of demand, and the construction order explains its
-shape. An inadequacy-elimination construction could support the same
-semantics, but its annotations would have to preserve an unresolved set of
-actions rather than only the result of static conflict resolution — in
-particular, distinguishing “both branches are canonically available” from
-“only one branch exists here.” The feature is therefore harder, though not
-impossible, in a merge-first construction; in this one it required a single
-guard. Bison's `%dprec` is superficially related but operates in GLR mode by
-ranking surviving parses [12]; Gazelle instead chooses one action on a single
-deterministic LR stack before either branch executes.
+Deferral imposes a different proof obligation on a merge-first construction.
+IELR's inadequacy analysis is designed to preserve the result of static
+conflict resolution; analogous runtime deferral would appear to require
+preserving the complete canonical action set and whether a conflict exists in
+each context. We have not implemented that extension, so this is an
+architectural observation rather than a complexity or impossibility claim.
+Once Gazelle's real/virtual branch representation is in place, preserving
+deferral through completion requires the one additional guard above. Bison's
+`%dprec` is superficially related but operates in GLR mode by ranking surviving
+parses [12]; Gazelle instead chooses one action on a single deterministic LR
+stack before either branch executes.
 
 Gazelle's regression suite compares this runtime decision with a conventional
 fixed grammar hierarchy for all 1,093 operator sequences containing up to
