@@ -1215,24 +1215,95 @@ mod tests {
     }
 
     #[cfg(feature = "codegen")]
-    fn distinct_canonical_item_sets(grammar: &GrammarInternal) -> usize {
+    fn gazelle_evaluation_without_examples(
+        grammar: &GrammarInternal,
+        export_canonical_machine: bool,
+    ) -> GazelleEvaluation {
         let first_sets = FirstSets::compute(grammar);
         let (nfa, info) = build_lr_nfa(grammar, &first_sets);
-        let (dfa, nfa_sets) = crate::automaton::subset_construction(&nfa);
-        let mut distinct = alloc::collections::BTreeSet::new();
+        let (mut dfa, nfa_sets) = crate::automaton::subset_construction(&nfa);
+        let classified = classify_dfa_states(&nfa_sets, info.items.len());
 
-        for nfa_set in nfa_sets.iter().take(dfa.num_states()) {
-            let mut items: Vec<_> = nfa_set
+        let mut distinct = alloc::collections::BTreeSet::new();
+        for nfa_set in &nfa_sets {
+            let items: alloc::vec::Vec<_> = nfa_set
                 .iter()
                 .copied()
-                .filter(|&state| state < info.items.len())
+                .filter(|state| *state < info.items.len())
                 .collect();
             if !items.is_empty() {
-                items.sort_unstable();
                 distinct.insert(items);
             }
         }
-        distinct.len()
+
+        // A conventional LR table has one cell per canonical item set and
+        // terminal. The hybrid NFA encoding can have multiple physical source
+        // states for that same cell, so compare normalized conflict identities.
+        let conflicts = detect_conflicts(&dfa, &classified, &info, grammar);
+        let mut shift_reduce_keys = alloc::collections::BTreeSet::new();
+        let mut reduce_reduce_keys = alloc::collections::BTreeSet::new();
+        for (source, terminal, kind) in &conflicts {
+            let items: alloc::vec::Vec<_> = nfa_sets[*source]
+                .iter()
+                .copied()
+                .filter(|state| *state < info.items.len())
+                .collect();
+            match kind {
+                grammar_conflict::ConflictKind::ShiftReduce(rule) => {
+                    shift_reduce_keys.insert((items, terminal.0, *rule));
+                }
+                grammar_conflict::ConflictKind::ReduceReduce(first, second) => {
+                    reduce_reduce_keys.insert((items, terminal.0, *first, *second));
+                }
+            }
+        }
+        let shift_reduce = shift_reduce_keys.len();
+        let reduce_reduce = reduce_reduce_keys.len();
+
+        let resolved = resolve_conflicts(classified, &info);
+        let canonical_machine = export_canonical_machine
+            .then(|| canonical_machine_from_dfa(grammar, &dfa, &resolved, &info));
+        merge_lookaheads(&mut dfa, &resolved, &info.reduce_to_real);
+        let num_rules = grammar.rules.len();
+        let initial_partition: alloc::vec::Vec<_> = resolved
+            .iter()
+            .map(|kind| match kind {
+                DfaStateKind::Reduce(rule) => *rule,
+                DfaStateKind::Items(_) => num_rules,
+            })
+            .collect();
+        let (_, state_map) = crate::automaton::hopcroft_minimize(&dfa, &initial_partition);
+        let final_states: alloc::collections::BTreeSet<_> = resolved
+            .iter()
+            .enumerate()
+            .filter_map(|(state, kind)| {
+                matches!(kind, DfaStateKind::Items(_)).then_some(state_map[state])
+            })
+            .collect();
+
+        GazelleEvaluation {
+            stats: GazelleStats {
+                canonical: distinct.len(),
+                final_states: final_states.len(),
+                shift_reduce,
+                reduce_reduce,
+            },
+            canonical_machine,
+        }
+    }
+
+    #[cfg(feature = "codegen")]
+    struct GazelleStats {
+        canonical: usize,
+        final_states: usize,
+        shift_reduce: usize,
+        reduce_reduce: usize,
+    }
+
+    #[cfg(feature = "codegen")]
+    struct GazelleEvaluation {
+        stats: GazelleStats,
+        canonical_machine: Option<(CanonicalMachine, usize)>,
     }
 
     #[cfg(feature = "codegen")]
@@ -1240,6 +1311,232 @@ mod tests {
         states: usize,
         shift_reduce: usize,
         reduce_reduce: usize,
+    }
+
+    #[cfg(feature = "codegen")]
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum MachineAction {
+        Shift(usize),
+        Goto(usize),
+        Reduce(usize),
+        Accept,
+        Error,
+    }
+
+    #[cfg(feature = "codegen")]
+    type CanonicalMachine = Vec<alloc::collections::BTreeMap<String, MachineAction>>;
+
+    #[cfg(feature = "codegen")]
+    #[derive(Default)]
+    struct BisonXmlState {
+        actions: alloc::collections::BTreeMap<String, MachineAction>,
+        accepting: bool,
+    }
+
+    #[cfg(feature = "codegen")]
+    fn xml_attribute<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+        let prefix = format!("{name}=\"");
+        let start = line.find(&prefix)? + prefix.len();
+        let end = line[start..].find('"')? + start;
+        Some(&line[start..end])
+    }
+
+    #[cfg(feature = "codegen")]
+    fn parse_bison_xml(xml: &str) -> Vec<BisonXmlState> {
+        let mut states = Vec::new();
+        let mut current = None;
+
+        for line in xml.lines().map(str::trim) {
+            if line.starts_with("<state ") {
+                let state: usize = xml_attribute(line, "number").unwrap().parse().unwrap();
+                assert_eq!(state, states.len(), "Bison XML states are not contiguous");
+                states.push(BisonXmlState::default());
+                current = Some(state);
+            } else if line == "</state>" {
+                current = None;
+            } else if let Some(state) = current {
+                if line.starts_with("<transition ") {
+                    let kind = xml_attribute(line, "type").unwrap();
+                    let symbol = xml_attribute(line, "symbol").unwrap().to_string();
+                    let target = xml_attribute(line, "state").unwrap().parse().unwrap();
+                    let action = match kind {
+                        "shift" => MachineAction::Shift(target),
+                        "goto" => MachineAction::Goto(target),
+                        other => panic!("unknown Bison transition type {other}"),
+                    };
+                    assert!(states[state].actions.insert(symbol, action).is_none());
+                } else if line.starts_with("<reduction ")
+                    && xml_attribute(line, "enabled") == Some("true")
+                {
+                    let symbol = xml_attribute(line, "symbol").unwrap();
+                    let rule = xml_attribute(line, "rule").unwrap();
+                    if symbol == "$default" && rule == "accept" {
+                        states[state].accepting = true;
+                    } else {
+                        assert_ne!(symbol, "$default", "unexpected Bison default reduction");
+                        let action = MachineAction::Reduce(rule.parse().unwrap());
+                        assert!(
+                            states[state]
+                                .actions
+                                .insert(symbol.to_string(), action)
+                                .is_none()
+                        );
+                    }
+                }
+            }
+        }
+
+        let accepting: alloc::collections::BTreeSet<_> = states
+            .iter()
+            .enumerate()
+            .filter_map(|(state, data)| data.accepting.then_some(state))
+            .collect();
+        for state in &mut states {
+            if let Some(MachineAction::Shift(target)) = state.actions.get("$end")
+                && accepting.contains(target)
+            {
+                state.actions.insert("$end".into(), MachineAction::Accept);
+            }
+        }
+        states
+    }
+
+    #[cfg(feature = "codegen")]
+    fn bison_canonical_xml(yacc: &str, name: &str) -> String {
+        use std::process::Command;
+
+        let dir =
+            std::env::temp_dir().join(format!("gazelle-bison-xml-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let grammar_path = dir.join("grammar.y");
+        let xml_path = dir.join("grammar.xml");
+        let parser_path = dir.join("grammar.c");
+        std::fs::write(&grammar_path, yacc).unwrap();
+
+        let output = Command::new("bison")
+            .arg("-Dlr.type=canonical-lr")
+            .arg("-Dlr.default-reduction=accepting")
+            .arg(format!("--xml={}", xml_path.display()))
+            .arg("-o")
+            .arg(&parser_path)
+            .arg(&grammar_path)
+            .output()
+            .expect("GAZELLE_BISON_REGRESSION requires GNU Bison");
+        assert!(
+            output.status.success(),
+            "bison XML export failed for {name}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let xml = std::fs::read_to_string(&xml_path).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+        xml
+    }
+
+    #[cfg(feature = "codegen")]
+    fn canonical_machine_from_dfa(
+        grammar: &GrammarInternal,
+        dfa: &crate::automaton::Dfa,
+        resolved: &[DfaStateKind],
+        info: &LrNfaInfo,
+    ) -> (CanonicalMachine, usize) {
+        let mut item_state_ids = vec![None; resolved.len()];
+        let mut num_item_states = 0;
+        for (state, kind) in resolved.iter().enumerate() {
+            if matches!(kind, DfaStateKind::Items(_)) {
+                item_state_ids[state] = Some(num_item_states);
+                num_item_states += 1;
+            }
+        }
+        let mut machine = vec![alloc::collections::BTreeMap::new(); num_item_states];
+        for (state, transitions) in dfa.transitions.iter().enumerate() {
+            let Some(source) = item_state_ids[state] else {
+                continue;
+            };
+            for &(symbol, target) in transitions {
+                if info.reduce_to_real.contains_key(&symbol) {
+                    continue;
+                }
+                let name = if symbol == 0 {
+                    "$end".to_string()
+                } else {
+                    grammar.symbols.name(SymbolId(symbol)).to_string()
+                };
+                let action = match &resolved[target] {
+                    DfaStateKind::Items(_) => {
+                        let target = item_state_ids[target].unwrap();
+                        if grammar.symbols.is_terminal(SymbolId(symbol)) {
+                            MachineAction::Shift(target)
+                        } else {
+                            MachineAction::Goto(target)
+                        }
+                    }
+                    DfaStateKind::Reduce(0) => MachineAction::Accept,
+                    DfaStateKind::Reduce(rule) => MachineAction::Reduce(*rule),
+                };
+                assert!(machine[source].insert(name, action).is_none());
+            }
+        }
+        (machine, item_state_ids[0].unwrap())
+    }
+
+    #[cfg(feature = "codegen")]
+    fn assert_canonical_bisimulation(
+        gazelle: &CanonicalMachine,
+        gazelle_start: usize,
+        yacc: &str,
+        name: &str,
+    ) {
+        let bison = parse_bison_xml(&bison_canonical_xml(yacc, name));
+        let mut work = vec![(gazelle_start, 0usize)];
+        let mut seen = alloc::collections::BTreeSet::new();
+
+        while let Some((gazelle_state, bison_state)) = work.pop() {
+            if !seen.insert((gazelle_state, bison_state)) {
+                continue;
+            }
+
+            let mut symbols: alloc::collections::BTreeSet<_> =
+                gazelle[gazelle_state].keys().cloned().collect();
+            symbols.extend(bison[bison_state].actions.keys().cloned());
+            symbols.remove("error");
+
+            for symbol in symbols {
+                let gazelle_action = gazelle[gazelle_state]
+                    .get(&symbol)
+                    .cloned()
+                    .unwrap_or(MachineAction::Error);
+                let bison_action = bison[bison_state]
+                    .actions
+                    .get(&symbol)
+                    .cloned()
+                    .unwrap_or(MachineAction::Error);
+                match (&gazelle_action, &bison_action) {
+                    (MachineAction::Shift(g), MachineAction::Shift(b))
+                    | (MachineAction::Goto(g), MachineAction::Goto(b)) => work.push((*g, *b)),
+                    _ => assert_eq!(
+                        gazelle_action, bison_action,
+                        "canonical action differs for {name}, states \
+                         Gazelle {gazelle_state}/Bison {bison_state}, symbol {symbol}"
+                    ),
+                }
+            }
+        }
+
+        let bison_non_accepting = bison.iter().filter(|state| !state.accepting).count();
+        let matched_gazelle: alloc::collections::BTreeSet<_> =
+            seen.iter().map(|(state, _)| *state).collect();
+        let matched_bison: alloc::collections::BTreeSet<_> =
+            seen.iter().map(|(_, state)| *state).collect();
+        assert_eq!(
+            matched_gazelle.len(),
+            gazelle.len(),
+            "unmatched Gazelle states for {name}"
+        );
+        assert_eq!(
+            matched_bison.len(),
+            bison_non_accepting,
+            "unmatched Bison states for {name}"
+        );
     }
 
     #[cfg(feature = "codegen")]
@@ -1306,7 +1603,9 @@ mod tests {
 
     /// Independent regression oracle for the automaton construction. This is
     /// opt-in locally because Bison is a system dependency; CI always enables
-    /// it through GAZELLE_BISON_REGRESSION.
+    /// it through GAZELLE_BISON_REGRESSION. GAZELLE_BISON_GRAMMAR selects one
+    /// fixture, GAZELLE_BISON_EXTENDED adds SQLite, and
+    /// GAZELLE_BISON_IELR_ONLY skips canonical comparison and bisimulation.
     #[cfg(feature = "codegen")]
     #[test]
     fn bison_canonical_and_ielr_state_counts() {
@@ -1317,6 +1616,7 @@ mod tests {
         let mut grammars: Vec<_> = [
             ("c11", "grammars/c11.gzl"),
             ("python", "grammars/python.gzl"),
+            ("jq", "grammars/jq.gzl"),
             ("regex", "grammars/regex.gzl"),
             ("meta", "grammars/meta.gzl"),
         ]
@@ -1334,8 +1634,22 @@ mod tests {
             "#
             .to_string(),
         ));
+        if std::env::var_os("GAZELLE_BISON_EXTENDED").is_some() {
+            grammars.push((
+                "sqlite",
+                std::fs::read_to_string("grammars/sqlite.gzl").unwrap(),
+            ));
+        }
 
+        let grammar_filter = std::env::var("GAZELLE_BISON_GRAMMAR").ok();
         for (name, source) in grammars {
+            if grammar_filter
+                .as_deref()
+                .is_some_and(|filter| filter != name)
+            {
+                continue;
+            }
+            std::eprintln!("Bison regression: {name}");
             let grammar = parse_grammar(&source).unwrap();
             let yacc = crate::codegen::to_yacc(&grammar).unwrap();
 
@@ -1347,42 +1661,46 @@ mod tests {
                 terminal.kind = crate::grammar::TerminalKind::Plain;
             }
             let internal = to_grammar_internal(&bare).unwrap();
-            let gazelle_canonical = distinct_canonical_item_sets(&internal);
-            let automaton =
-                build_minimal_automaton_with_limits(&internal, CounterexampleLimits::default());
-            let gazelle_final = automaton.num_item_states;
-            let gazelle_sr = automaton
-                .conflicts
-                .iter()
-                .filter(|conflict| matches!(conflict, crate::table::Conflict::ShiftReduce { .. }))
-                .count();
-            let gazelle_rr = automaton
-                .conflicts
-                .iter()
-                .filter(|conflict| matches!(conflict, crate::table::Conflict::ReduceReduce { .. }))
-                .count();
+            // Conflict examples are orthogonal to this structural regression.
+            let ielr_only = std::env::var_os("GAZELLE_BISON_IELR_ONLY").is_some();
+            let evaluation = gazelle_evaluation_without_examples(&internal, !ielr_only);
+            let gazelle = evaluation.stats;
+            std::eprintln!("  Gazelle canonical: {}", gazelle.canonical);
+            std::eprintln!("  Gazelle final: {}", gazelle.final_states);
+
+            // Run the compact oracle first. Bison's canonical construction can
+            // be orders of magnitude slower on the extended stress corpus.
+            let bison_ielr = bison_stats(&yacc, "ielr", name);
+            std::eprintln!("  Bison IELR: {}", bison_ielr.states - 1);
+            assert_eq!(
+                gazelle.final_states,
+                bison_ielr.states - 1,
+                "minimized state count differs from Bison IELR for {name}"
+            );
+
+            if ielr_only {
+                continue;
+            }
 
             // Bison has one additional state for its synthetic $accept rule.
             let bison_canonical = bison_stats(&yacc, "canonical-lr", name);
-            let bison_ielr = bison_stats(&yacc, "ielr", name);
+            std::eprintln!("  Bison canonical: {}", bison_canonical.states - 1);
             assert_eq!(
-                gazelle_canonical,
+                gazelle.canonical,
                 bison_canonical.states - 1,
                 "canonical LR(1) state count differs for {name}"
             );
             assert_eq!(
-                gazelle_sr, bison_canonical.shift_reduce,
+                gazelle.shift_reduce, bison_canonical.shift_reduce,
                 "canonical shift/reduce conflict count differs for {name}"
             );
             assert_eq!(
-                gazelle_rr, bison_canonical.reduce_reduce,
+                gazelle.reduce_reduce, bison_canonical.reduce_reduce,
                 "canonical reduce/reduce conflict count differs for {name}"
             );
-            assert_eq!(
-                gazelle_final,
-                bison_ielr.states - 1,
-                "minimized state count differs from Bison IELR for {name}"
-            );
+            let (canonical_machine, canonical_start) = evaluation.canonical_machine.unwrap();
+            assert_canonical_bisimulation(&canonical_machine, canonical_start, &yacc, name);
+            std::eprintln!("  canonical bisimulation: passed");
         }
     }
 }

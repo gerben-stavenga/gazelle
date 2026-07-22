@@ -1,0 +1,214 @@
+// SPDX-License-Identifier: MIT
+// Mechanically normalized Bison grammar for evaluation only.
+// Upstream: https://github.com/jqlang/jq/blob/2d410d6d86be7f685ad28e5cffac0248aa47664c/src/parser.y
+// Revision: 2d410d6d86be7f685ad28e5cffac0248aa47664c
+// Semantic actions and static precedence declarations were stripped.
+
+start TopLevel;
+terminals {
+    BINDING, BISON_ERROR, FIELD, FORMAT, FUNCDEF, IDENT, INVALID_CHARACTER, KW_AND,
+    KW_AS, KW_BREAK, KW_CATCH, KW_DEF, KW_ELIF, KW_ELSE, KW_END, KW_FOREACH,
+    KW_IF, KW_IMPORT, KW_INCLUDE, KW_LABEL, KW_MODULE, KW_OR, KW_REDUCE, KW_THEN,
+    KW_TRY, LITERAL, LIT_24, LIT_24_5F_5F_6C_6F_63_5F_5F, LIT_2E_2E, LIT_2F_2F_3D, LIT_3F_2F_2F, NONOPT,
+    QQSTRING_END, QQSTRING_INTERP_END, QQSTRING_INTERP_START, QQSTRING_START, QQSTRING_TEXT, TOK_COLON, TOK_COMMA, TOK_DOT,
+    TOK_EQ, TOK_EQEQ, TOK_GE, TOK_GT, TOK_LBRACE, TOK_LBRACK, TOK_LE, TOK_LPAREN,
+    TOK_LT, TOK_MINUS, TOK_MINUSEQ, TOK_NE, TOK_PERCENT, TOK_PERCENTEQ, TOK_PIPE, TOK_PIPEEQ,
+    TOK_PLUS, TOK_PLUSEQ, TOK_QUESTION, TOK_RBRACE, TOK_RBRACK, TOK_RPAREN, TOK_SEMI, TOK_SLASH,
+    TOK_SLASHEQ, TOK_SLASHSLASH, TOK_STAR, TOK_STAREQ
+}
+
+TopLevel = Module Imports Query => alt_1
+    | Module Imports FuncDefs => alt_2;
+
+Module = _ => alt_1
+    | KW_MODULE Query TOK_SEMI => alt_2;
+
+Imports = _ => alt_1
+    | Import Imports => alt_2;
+
+FuncDefs = _ => alt_1
+    | FuncDef FuncDefs => alt_2;
+
+Query = FuncDef Query => alt_1
+    | Expr KW_AS Patterns TOK_PIPE Query => alt_2
+    | KW_LABEL BINDING TOK_PIPE Query => alt_3
+    | Query TOK_PIPE Query => alt_4
+    | Query TOK_COMMA Query => alt_5
+    | Expr => alt_6;
+
+Expr = Expr TOK_SLASHSLASH Expr => alt_1
+    | Expr TOK_EQ Expr => alt_2
+    | Expr KW_OR Expr => alt_3
+    | Expr KW_AND Expr => alt_4
+    | Expr LIT_2F_2F_3D Expr => alt_5
+    | Expr TOK_PIPEEQ Expr => alt_6
+    | Expr TOK_PLUS Expr => alt_7
+    | Expr TOK_PLUSEQ Expr => alt_8
+    | Expr TOK_MINUS Expr => alt_9
+    | Expr TOK_MINUSEQ Expr => alt_10
+    | Expr TOK_STAR Expr => alt_11
+    | Expr TOK_STAREQ Expr => alt_12
+    | Expr TOK_SLASH Expr => alt_13
+    | Expr TOK_PERCENT Expr => alt_14
+    | Expr TOK_SLASHEQ Expr => alt_15
+    | Expr TOK_PERCENTEQ Expr => alt_16
+    | Expr TOK_EQEQ Expr => alt_17
+    | Expr TOK_NE Expr => alt_18
+    | Expr TOK_LT Expr => alt_19
+    | Expr TOK_GT Expr => alt_20
+    | Expr TOK_LE Expr => alt_21
+    | Expr TOK_GE Expr => alt_22
+    | Term => alt_23;
+
+Import = ImportWhat TOK_SEMI => alt_1
+    | ImportWhat Query TOK_SEMI => alt_2;
+
+ImportWhat = KW_IMPORT ImportFrom KW_AS BINDING => alt_1
+    | KW_IMPORT ImportFrom KW_AS IDENT => alt_2
+    | KW_INCLUDE ImportFrom => alt_3;
+
+ImportFrom = String => alt_1;
+
+FuncDef = KW_DEF IDENT TOK_COLON Query TOK_SEMI => alt_1
+    | KW_DEF IDENT TOK_LPAREN Params TOK_RPAREN TOK_COLON Query TOK_SEMI => alt_2;
+
+Params = Param => alt_1
+    | Params TOK_SEMI Param => alt_2;
+
+Param = BINDING => alt_1
+    | IDENT => alt_2;
+
+StringStart = FORMAT QQSTRING_START => alt_1
+    | QQSTRING_START => alt_2;
+
+String = StringStart QQString QQSTRING_END => alt_1;
+
+QQString = _ => alt_1
+    | QQString QQSTRING_TEXT => alt_2
+    | QQString QQSTRING_INTERP_START Query QQSTRING_INTERP_END => alt_3;
+
+ElseBody = KW_ELIF Query KW_THEN Query ElseBody => alt_1
+    | KW_ELSE Query KW_END => alt_2
+    | KW_END => alt_3;
+
+Term = TOK_DOT => alt_1
+    | LIT_2E_2E => alt_2
+    | KW_BREAK BINDING => alt_3
+    | KW_BREAK BISON_ERROR => alt_4
+    | Term FIELD TOK_QUESTION => alt_5
+    | FIELD TOK_QUESTION => alt_6
+    | Term TOK_DOT String TOK_QUESTION => alt_7
+    | TOK_DOT String TOK_QUESTION => alt_8
+    | Term FIELD => alt_9
+    | FIELD => alt_10
+    | Term TOK_DOT String => alt_11
+    | TOK_DOT String => alt_12
+    | TOK_DOT BISON_ERROR => alt_13
+    | TOK_DOT IDENT BISON_ERROR => alt_14
+    | Term TOK_LBRACK Query TOK_RBRACK TOK_QUESTION => alt_15
+    | Term TOK_LBRACK Query TOK_RBRACK => alt_16
+    | Term TOK_DOT TOK_LBRACK Query TOK_RBRACK TOK_QUESTION => alt_17
+    | Term TOK_DOT TOK_LBRACK Query TOK_RBRACK => alt_18
+    | Term TOK_LBRACK TOK_RBRACK TOK_QUESTION => alt_19
+    | Term TOK_LBRACK TOK_RBRACK => alt_20
+    | Term TOK_DOT TOK_LBRACK TOK_RBRACK TOK_QUESTION => alt_21
+    | Term TOK_DOT TOK_LBRACK TOK_RBRACK => alt_22
+    | Term TOK_LBRACK Query TOK_COLON Query TOK_RBRACK TOK_QUESTION => alt_23
+    | Term TOK_LBRACK Query TOK_COLON TOK_RBRACK TOK_QUESTION => alt_24
+    | Term TOK_LBRACK TOK_COLON Query TOK_RBRACK TOK_QUESTION => alt_25
+    | Term TOK_LBRACK Query TOK_COLON Query TOK_RBRACK => alt_26
+    | Term TOK_LBRACK Query TOK_COLON TOK_RBRACK => alt_27
+    | Term TOK_LBRACK TOK_COLON Query TOK_RBRACK => alt_28
+    | Term TOK_QUESTION => alt_29
+    | LITERAL => alt_30
+    | String => alt_31
+    | FORMAT => alt_32
+    | TOK_MINUS Term => alt_33
+    | TOK_LPAREN Query TOK_RPAREN => alt_34
+    | TOK_LBRACK Query TOK_RBRACK => alt_35
+    | TOK_LBRACK TOK_RBRACK => alt_36
+    | TOK_LBRACE DictPairs TOK_RBRACE => alt_37
+    | KW_REDUCE Expr KW_AS Patterns TOK_LPAREN Query TOK_SEMI Query TOK_RPAREN => alt_38
+    | KW_FOREACH Expr KW_AS Patterns TOK_LPAREN Query TOK_SEMI Query TOK_SEMI Query TOK_RPAREN => alt_39
+    | KW_FOREACH Expr KW_AS Patterns TOK_LPAREN Query TOK_SEMI Query TOK_RPAREN => alt_40
+    | KW_IF Query KW_THEN Query ElseBody => alt_41
+    | KW_IF Query KW_THEN BISON_ERROR => alt_42
+    | KW_TRY Expr KW_CATCH Expr => alt_43
+    | KW_TRY Expr KW_CATCH BISON_ERROR => alt_44
+    | KW_TRY Expr => alt_45
+    | LIT_24 LIT_24 LIT_24 BINDING => alt_46
+    | BINDING => alt_47
+    | LIT_24_5F_5F_6C_6F_63_5F_5F => alt_48
+    | IDENT => alt_49
+    | IDENT TOK_LPAREN Args TOK_RPAREN => alt_50
+    | TOK_LPAREN BISON_ERROR TOK_RPAREN => alt_51
+    | TOK_LBRACK BISON_ERROR TOK_RBRACK => alt_52
+    | Term TOK_LBRACK BISON_ERROR TOK_RBRACK => alt_53
+    | TOK_LBRACE BISON_ERROR TOK_RBRACE => alt_54;
+
+Args = Arg => alt_1
+    | Args TOK_SEMI Arg => alt_2;
+
+Arg = Query => alt_1;
+
+RepPatterns = RepPatterns LIT_3F_2F_2F Pattern => alt_1
+    | Pattern => alt_2;
+
+Patterns = RepPatterns LIT_3F_2F_2F Pattern => alt_1
+    | Pattern => alt_2;
+
+Pattern = BINDING => alt_1
+    | TOK_LBRACK ArrayPats TOK_RBRACK => alt_2
+    | TOK_LBRACE ObjPats TOK_RBRACE => alt_3;
+
+ArrayPats = Pattern => alt_1
+    | ArrayPats TOK_COMMA Pattern => alt_2;
+
+ObjPats = ObjPat => alt_1
+    | ObjPats TOK_COMMA ObjPat => alt_2;
+
+ObjPat = BINDING => alt_1
+    | BINDING TOK_COLON Pattern => alt_2
+    | IDENT TOK_COLON Pattern => alt_3
+    | Keyword TOK_COLON Pattern => alt_4
+    | String TOK_COLON Pattern => alt_5
+    | TOK_LPAREN Query TOK_RPAREN TOK_COLON Pattern => alt_6
+    | BISON_ERROR TOK_COLON Pattern => alt_7;
+
+Keyword = KW_AS => alt_1
+    | KW_DEF => alt_2
+    | KW_MODULE => alt_3
+    | KW_IMPORT => alt_4
+    | KW_INCLUDE => alt_5
+    | KW_IF => alt_6
+    | KW_THEN => alt_7
+    | KW_ELSE => alt_8
+    | KW_ELIF => alt_9
+    | KW_REDUCE => alt_10
+    | KW_FOREACH => alt_11
+    | KW_END => alt_12
+    | KW_AND => alt_13
+    | KW_OR => alt_14
+    | KW_TRY => alt_15
+    | KW_CATCH => alt_16
+    | KW_LABEL => alt_17
+    | KW_BREAK => alt_18;
+
+DictPairs = _ => alt_1
+    | DictPair => alt_2
+    | DictPair TOK_COMMA DictPairs => alt_3;
+
+DictPair = IDENT TOK_COLON DictExpr => alt_1
+    | Keyword TOK_COLON DictExpr => alt_2
+    | String TOK_COLON DictExpr => alt_3
+    | String => alt_4
+    | BINDING TOK_COLON DictExpr => alt_5
+    | BINDING => alt_6
+    | IDENT => alt_7
+    | LIT_24_5F_5F_6C_6F_63_5F_5F => alt_8
+    | Keyword => alt_9
+    | TOK_LPAREN Query TOK_RPAREN TOK_COLON DictExpr => alt_10
+    | BISON_ERROR TOK_COLON DictExpr => alt_11;
+
+DictExpr = DictExpr TOK_PIPE DictExpr => alt_1
+    | Expr => alt_2;

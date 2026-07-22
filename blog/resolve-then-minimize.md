@@ -23,18 +23,19 @@ transformation under a per-terminal, alignment-driven selection policy. It may
 delay errors but preserves accepted-input action traces.
 
 Gazelle implements this pipeline using the same generic automaton module as
-its lexer generator. On modifier-stripped versions of five grammars, its
-canonical item-set and conflict counts agree with GNU Bison's canonical-LR
-mode. After completion and minimization, its state counts agree with Bison's
-IELR mode: the bare comparison form of a 292-line C++ grammar falls from 5,350
-canonical states to 601, while LALR has 571 states and would change resolved
-behavior. The production Gazelle grammar retains its terminal resolution
-modifiers and has 632 states; the difference is the cost of preserving those
-additional semantics. Equality of state counts is evidence about compactness,
-not a proof that the constructions produce isomorphic machines or equally
-sized encoded tables. The result is a simpler route to a
-canonical-LR-equivalent parser whose state count, on the bare grammars
-evaluated here, is the same as IELR.
+its lexer generator. On five tractable grammars, its resolved canonical
+machine is checked action by action against GNU Bison's canonical-LR output by
+a bisimulation over shifts, gotos, reductions, acceptance, and errors. After
+completion and minimization, its state counts agree with Bison's IELR mode on
+six grammars. The largest fixture, a normalized SQLite grammar, falls from
+66,539 canonical states to 1,340; Bison IELR also has 1,340 states, while LALR
+has 1,319 and loses canonical distinctions. On the evaluation machine,
+Gazelle completed the SQLite construction and comparison in approximately six
+seconds; Bison's canonical mode did not finish within seven minutes. Equality
+of final state counts remains evidence about compactness, not a claim that the
+two final constructions are isomorphic or occupy the same number of bytes. The
+result is a simpler route to a canonical-LR-equivalent parser whose state
+count, on the bare grammars evaluated here, is the same as IELR.
 
 ## 1. Introduction
 
@@ -44,10 +45,10 @@ so a conflict is inherent in the grammar rather than introduced by table
 construction. If a generator resolves conflicts in this automaton, the
 resolution is applied in precisely the contexts in which each action arose.
 
-The difficulty is size. The canonical automaton for the C++ grammar used in
-this paper contains 5,350 item sets. The corresponding LALR automaton has
-571. This gap explains the usual construction order: build or approximate the
-small machine first, then perform conflict analysis on it. Unfortunately,
+The difficulty is size. The canonical automaton for the SQLite grammar used
+in this paper contains 66,539 item sets. Its IELR automaton has 1,340 states.
+This gap explains the usual construction order: build or approximate the small
+machine first, then perform conflict analysis on it. Unfortunately,
 merging LR(1) contexts can create new conflicts, and it can also change how a
 real conflict is resolved. Pager's method restricts construction-time merges
 to compatible states [3]. IELR begins from LALR and splits states whose merges
@@ -704,40 +705,48 @@ feedback and semantic values—is outside this paper's central claim.
 ## 6. Evaluation
 
 Gazelle's `--yacc` mode emits an equivalent Bison grammar, allowing Bison to
-serve as an independent implementation reference. The evaluation uses five
-grammars: C++, C11, Python, Gazelle's regular-expression grammar, and its
-self-hosted meta grammar. Terminal resolution modifiers (`shift`, `reduce`,
-`prec`, `conflict`) are stripped for the comparison, so both tools receive the
-same bare grammar, and conflicts are counted before applying the tools'
-matching default choices. These comparison machines are not the production
-Gazelle tables when a grammar uses modifiers; §6.2 reports both counts
-separately.
+serve as an independent implementation reference. The evaluation uses six
+grammars: C11, Python, jq, SQLite, Gazelle's regular-expression grammar, and
+its self-hosted meta grammar. jq is mechanically normalized from its native
+Bison grammar; SQLite is normalized from the grammars-v4 ANTLR grammar. The
+sources, pinned revisions, licenses, and transformations are recorded with the
+fixtures. They exercise parser-table construction and are not claims of
+complete Gazelle front ends.
+
+Terminal resolution modifiers (`shift`, `reduce`, `prec`, `conflict`) and
+upstream static-precedence declarations are stripped for the comparison, so
+both tools receive the same bare grammar and apply the same default conflict
+choices. These comparison machines are not the production Gazelle tables when
+a grammar uses modifiers; §6.2 reports those counts separately.
 
 ### 6.1 Canonical construction
 
-The first comparison uses `bison -Dlr.type=canonical-lr`. Bison contributes
-one synthetic `$accept` state; the table reports its count minus that state.
+The first comparison uses `bison -Dlr.type=canonical-lr` with default
+reductions restricted to the accepting state. Bison contributes one synthetic
+`$accept` state; the table reports its count minus that state.
 
 | grammar | Gazelle canonical item sets | Bison canonical − `$accept` |
 |---------|----------------------------:|-----------------------------:|
-| C++     | 5,350                       | 5,350                        |
 | C11     | 2,097                       | 2,097                        |
 | Python  | 3,298                       | 3,298                        |
+| jq      | 4,779                       | 4,779                        |
 | regex   | 69                          | 69                           |
 | meta    | 61                          | 61                           |
 
-Conflict counts also agree after accounting for Gazelle's hybrid-state
-encoding. C11 has 128 shift/reduce and three reduce/reduce conflicts in both
-tools; Python has 1,755 shift/reduce conflicts; regex has three; and meta has
-none. The C++ grammar produces 3,182 physical hybrid conflicts in Gazelle
-versus 2,893 Bison table cells. Deduplicating Gazelle conflicts by canonical
-item set and terminal yields 2,893. The surplus consists of different
-physical target states representing the same conventional conflicted cell.
+Conflict counts agree as well. More strongly, the automated regression exports
+Bison's resolved actions and compares the two reachable labeled transition
+systems. Starting from their initial states, every terminal and nonterminal
+must produce the same shift, goto, reduction, acceptance, or error; successor
+pairs are added to the relation recursively, and every item state in both
+machines must be covered. The relation is intentionally not required to be a
+bijection because Gazelle's hybrid encoding can contain multiple physical
+targets for one conventional LR state. This canonical bisimulation passes for
+all five grammars in the table.
 
-These results test counts, not structural identity. They are consistent with
-the correspondence in §3.1, but “same number of states” is weaker than a
-bijection between item sets. A stronger test would export both machines and
-compare normalized item sets directly.
+SQLite has 66,539 Gazelle canonical states. GNU Bison's canonical construction
+did not finish within seven minutes on the evaluation machine, so no Bison
+canonical count or cross-tool bisimulation is reported for that fixture. It is
+included in the independently generated IELR comparison below.
 
 ### 6.2 Completed and minimized state counts
 
@@ -746,17 +755,18 @@ synthetic accept state.
 
 | bare grammar | Gazelle final | Bison IELR − `$accept` | Bison LALR − `$accept` |
 |--------------|--------------:|------------------------:|------------------------:|
-| C++     | 601           | 601                     | 571                     |
 | C11     | 470           | 470                     | 470                     |
 | Python  | 418           | 418                     | 418                     |
+| jq      | 311           | 311                     | 311                     |
+| SQLite  | 1,340         | 1,340                   | 1,319                   |
 | regex   | 44            | 44                      | 44                      |
 | meta    | 61            | 61                      | 61                      |
 
-Four evaluated grammars require no states beyond LALR. The C++ grammar is the
-interesting case: IELR retains 30 more states than LALR to preserve canonical
+Five evaluated grammars require no states beyond LALR. SQLite is the
+interesting case: IELR retains 21 more states than LALR to preserve canonical
 resolved behavior, and Gazelle retains the same number. Gazelle compresses the
-canonical machine by a factor of 8.9 while avoiding the merge that would alter
-the reference parser.
+canonical machine by a factor of 49.7 while avoiding the merges that would
+alter the reference parser.
 
 The production Gazelle grammars retain their terminal modifiers. Virtual
 reduce symbols and the guard of §5 can keep states separate when merging them
@@ -765,16 +775,15 @@ machine:
 
 | production grammar | Gazelle states with modifiers |
 |--------------------|-------------------------------:|
-| C++                | 632                            |
 | C11                | 506                            |
 | Python             | 418                            |
 | regex              | 44                             |
 | meta               | 61                             |
 
-The 31-state C++ and 36-state C11 differences are therefore not failures to
-reach the bare IELR count. They are the measured cost of semantics removed
-from the Bison comparison. Conversely, the equal Python, regex, and meta
-counts show that modifiers do not necessarily prevent the same quotient.
+The 36-state C11 difference is therefore not a failure to reach the bare IELR
+count. It is the measured cost of semantics removed from the Bison comparison.
+Conversely, the equal Python, regex, and meta counts show that modifiers do not
+necessarily prevent the same quotient.
 
 The bare-count equality is empirical. It does not establish that Gazelle and
 IELR always produce the same quotient, that the machines are isomorphic, that
@@ -794,20 +803,53 @@ reduce edges, and extracts tables.
 
 Gazelle eagerly allocates one NFA node for every `(production, dot,
 lookahead)` triple, including unreachable triples. This trades memory for
-simple index arithmetic; subset construction visits only reachable sets. The
-C++ grammar builds in approximately six seconds in the development environment
-used for the reported comparison, including counterexample generation for
-roughly three thousand intentional conflicts. The Bison measurements were
-reproduced with GNU Bison 3.8.2. These figures are engineering observations
-rather than a controlled performance study. A complete evaluation should
-report the source revision and grammar hashes, hardware, peak memory,
-construction time by phase, action and goto entry counts, generated-table
-bytes, and parse speed against other generators.
+simple index arithmetic; subset construction visits only reachable sets. In
+an optimized test build, the SQLite fixture's complete Gazelle construction
+and Bison IELR comparison finishes in approximately six seconds. Gazelle
+constructs 66,539 canonical states and minimizes them to 1,340 in that run;
+Bison's canonical mode was stopped after seven minutes without a result. The
+Bison measurements were reproduced with GNU Bison 3.8.2. These figures are
+engineering observations rather than a controlled performance study. A
+complete evaluation should report the source revision and grammar hashes,
+hardware, peak memory, construction time by phase, action and goto entry
+counts, generated-table bytes, and parse speed against other generators.
 
-The repository's opt-in Bison regression currently covers C11, Python, regex,
-meta, and a small LR(1)-but-not-LALR witness. The larger C++ row and its
-conflict normalization were measured separately; adding them to the automated
-artifact is necessary for full reproducibility of the headline result.
+The repository's opt-in Bison regression covers C11, Python, jq, regex, meta,
+and a small LR(1)-but-not-LALR witness. SQLite is an extended opt-in fixture so
+normal development does not pay its construction cost. An IELR-only mode runs
+compactness checks without first requiring Bison's potentially much slower
+canonical construction.
+
+### 6.4 Reproducing the tests
+
+The ordinary Rust suite has no external parser-generator dependency:
+
+```sh
+cargo test --features codegen
+```
+
+With GNU Bison installed, the main differential regression runs canonical
+state and conflict counts, canonical bisimulation, and final IELR counts. A
+release build is recommended for jq:
+
+```sh
+GAZELLE_BISON_REGRESSION=1 cargo test --release --features codegen \
+  bison_canonical_and_ielr_state_counts -- --nocapture
+```
+
+The SQLite stress fixture deliberately skips Bison canonical construction and
+runs the independently generated IELR comparison:
+
+```sh
+GAZELLE_BISON_REGRESSION=1 GAZELLE_BISON_EXTENDED=1 \
+GAZELLE_BISON_IELR_ONLY=1 GAZELLE_BISON_GRAMMAR=sqlite \
+  cargo test --release --features codegen \
+  bison_canonical_and_ielr_state_counts -- --nocapture
+```
+
+`GAZELLE_BISON_GRAMMAR=<name>` selects any single fixture, and
+`GAZELLE_BISON_IELR_ONLY=1` can be used independently to run only the compact
+state-count comparison.
 
 ## 7. Related work
 
@@ -881,18 +923,20 @@ stack assumptions explicit, and should include the formal statement that
 classical per-state default reductions satisfy the same insertion
 conditions.
 
-Second, the evaluation establishes state-count agreement, not table
-equivalence or equal encoded size.
-Exporting Bison and Gazelle machines into a common representation would permit
-item-set comparison for canonical construction and a bisimulation or product-
-machine check after resolution. Reporting action/goto entries and serialized
-bytes would test the motivating claim about tables being small enough to ship.
+Second, the canonical comparison now establishes resolved-table bisimulation,
+but the final comparison establishes only state-count agreement, not final
+machine equivalence or equal encoded size. Exporting Bison's IELR machine into
+a normalization that accounts for Gazelle's completion policy would permit a
+product-machine check of the final tables. Reporting action/goto entries and
+serialized bytes would test the motivating claim about tables being small
+enough to ship.
 
-Third, only five grammars are measured, and the headline C++ row is not yet in
-the automated differential regression. A corpus covering more LR(1)-but-not-
-LALR grammars, grammars with different conflict policies, nullable cycles, and
-large generated languages would better characterize when Gazelle's fixed
-completion matches IELR size and when it does not.
+Third, only six grammars are measured. The two external fixtures are
+mechanically normalized parser grammars, and SQLite's complemented token sets
+are represented by explicit wildcard-class terminals. A corpus covering more
+LR(1)-but-not-LALR grammars, conflict policies, nullable cycles, and large
+generated languages would better characterize when Gazelle's fixed completion
+matches IELR size and when it does not.
 
 Fourth, spurious reductions weaken immediate error detection and can execute
 semantic actions on invalid input. The generated parser preserves recognition
@@ -930,7 +974,7 @@ machine.
 
 The result is not a solution to globally minimal LR table construction. It is
 a simpler construction of a canonical-LR-equivalent parser whose state counts,
-on the modifier-stripped grammars evaluated here, equal those produced by
+on all six modifier-stripped grammars evaluated here, equal those produced by
 IELR. Production grammars with additional resolution semantics may retain more
 states, and equal state counts do not imply equal encoded bytes. More broadly,
 the construction illustrates a useful engineering principle: when a

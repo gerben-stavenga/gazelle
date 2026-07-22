@@ -1,0 +1,939 @@
+// SPDX-License-Identifier: MIT
+// Mechanically translated parser grammar for evaluation only.
+// Upstream: https://github.com/antlr/grammars-v4/blob/e756f2a2ee5565a9300666f100ba6acd874664f7/sql/sqlite/SQLiteParser.g4
+// Revision: e756f2a2ee5565a9300666f100ba6acd874664f7
+// Lexer rules and EOF markers are outside this table comparison.
+// 2 negated token set(s) were collapsed to wildcard-class terminals.
+
+start parse;
+terminals {
+    ABORT_, ACTION_, ADD_, AFTER_, ALL_, ALTER_, ALWAYS_, AMP,
+    ANALYZE_, AND_, ANTLR_NOT_SET_1, ANTLR_NOT_SET_2, ASC_, ASSIGN, AS_, ATTACH_,
+    AUTOINCREMENT_, BEFORE_, BEGIN_, BETWEEN_, BIND_PARAMETER, BLOB_LITERAL, BY_, CASCADE_,
+    CASE_, CAST_, CHECK_, CLOSE_PAR, COLLATE_, COLUMN_, COMMA, COMMIT_,
+    CONFLICT_, CONSTRAINT_, CREATE_, CROSS_, CURRENT_, CURRENT_DATE_, CURRENT_TIMESTAMP_, CURRENT_TIME_,
+    DATABASE_, DEFAULT_, DEFERRABLE_, DEFERRED_, DELETE_, DESC_, DETACH_, DISTINCT_,
+    DIV, DOT, DO_, DROP_, EACH_, ELSE_, END_, EQ,
+    ESCAPE_, EXCEPT_, EXCLUDE_, EXCLUSIVE_, EXISTS_, EXPLAIN_, FAIL_, FALSE_,
+    FILTER_, FIRST_, FOLLOWING_, FOREIGN_, FOR_, FROM_, FULL_, GENERATED_,
+    GLOB_, GROUPS_, GROUP_, GT, GT2, GT_EQ, HAVING_, IDENTIFIER,
+    IF_, IGNORE_, IMMEDIATE_, INDEXED_, INDEX_, INITIALLY_, INNER_, INSERT_,
+    INSTEAD_, INTERSECT_, INTO_, IN_, ISNULL_, IS_, JOIN_, JPTR,
+    JPTR2, KEY_, LAST_, LEFT_, LIKE_, LIMIT_, LT, LT2,
+    LT_EQ, MATCH_, MATERIALIZED_, MINUS, MOD, NATURAL_, NOTHING_, NOTNULL_,
+    NOT_, NOT_EQ1, NOT_EQ2, NO_, NULLS_, NULL_, NUMERIC_LITERAL, OFFSET_,
+    OF_, ON_, OPEN_PAR, ORDER_, OR_, OTHERS_, OUTER_, OVER_,
+    PARTITION_, PIPE, PIPE2, PLAN_, PLUS, PRAGMA_, PRECEDING_, PRIMARY_,
+    QUERY_, RAISE_, RANGE_, RECURSIVE_, REFERENCES_, REGEXP_, REINDEX_, RELEASE_,
+    RENAME_, REPLACE_, RESTRICT_, RETURNING_, RIGHT_, ROLLBACK_, ROWID_, ROWS_,
+    ROW_, SAVEPOINT_, SCOL, SELECT_, SET_, STAR, STORED_, STRICT_,
+    STRING_LITERAL, TABLE_, TEMPORARY_, TEMP_, THEN_, TIES_, TILDE, TO_,
+    TRANSACTION_, TRIGGER_, TRUE_, UNBOUNDED_, UNION_, UNIQUE_, UPDATE_, USING_,
+    VACUUM_, VALUES_, VIEW_, VIRTUAL_, WHEN_, WHERE_, WINDOW_, WITHIN_,
+    WITHOUT_, WITH_
+}
+
+parse = sql_stmt_list => alt_1;
+
+sql_stmt_list = sql_stmt ? __antlr_sql_stmt_list_group_1 * => alt_1;
+
+sql_stmt = __antlr_sql_stmt_group_3 ? __antlr_sql_stmt_group_4 => alt_1;
+
+alter_table_stmt = ALTER_ TABLE_ __antlr_alter_table_stmt_group_5 ? table_name __antlr_alter_table_stmt_group_14 => alt_1;
+
+analyze_stmt = ANALYZE_ __antlr_analyze_stmt_group_16 ? => alt_1;
+
+attach_stmt = ATTACH_ DATABASE_ ? expr AS_ schema_name => alt_1;
+
+begin_stmt = BEGIN_ __antlr_begin_stmt_group_17 ? TRANSACTION_ ? => alt_1;
+
+commit_stmt = __antlr_commit_stmt_group_18 TRANSACTION_ ? => alt_1;
+
+rollback_stmt = ROLLBACK_ TRANSACTION_ ? __antlr_rollback_stmt_group_19 ? => alt_1;
+
+savepoint_stmt = SAVEPOINT_ savepoint_name => alt_1;
+
+release_stmt = RELEASE_ SAVEPOINT_ ? savepoint_name => alt_1;
+
+create_index_stmt = CREATE_ UNIQUE_ ? INDEX_ __antlr_create_index_stmt_group_20 ? __antlr_create_index_stmt_group_21 ? index_name ON_ table_name OPEN_PAR indexed_column __antlr_create_index_stmt_group_22 * CLOSE_PAR __antlr_create_index_stmt_group_23 ? => alt_1;
+
+indexed_column = expr __antlr_indexed_column_group_24 ? asc_desc ? => alt_1;
+
+create_table_stmt = CREATE_ __antlr_create_table_stmt_group_25 ? TABLE_ __antlr_create_table_stmt_group_26 ? __antlr_create_table_stmt_group_27 ? table_name __antlr_create_table_stmt_group_30 => alt_1;
+
+table_options = __antlr_table_options_group_31 __antlr_table_options_group_33 * => alt_1;
+
+column_def = column_name type_name ? column_constraint * => alt_1;
+
+type_name = name + __antlr_type_name_group_34 ? => alt_1;
+
+column_constraint = __antlr_column_constraint_group_35 ? __antlr_column_constraint_group_40 => alt_1;
+
+signed_number = __antlr_signed_number_group_41 ? NUMERIC_LITERAL => alt_1;
+
+table_constraint = __antlr_table_constraint_group_42 ? __antlr_table_constraint_group_46 => alt_1;
+
+foreign_key_clause = REFERENCES_ foreign_table __antlr_foreign_key_clause_group_48 ? __antlr_foreign_key_clause_group_52 * __antlr_foreign_key_clause_group_55 ? => alt_1;
+
+conflict_clause = ON_ CONFLICT_ __antlr_conflict_clause_group_56 => alt_1;
+
+create_trigger_stmt = CREATE_ __antlr_create_trigger_stmt_group_57 ? TRIGGER_ __antlr_create_trigger_stmt_group_58 ? __antlr_create_trigger_stmt_group_59 ? trigger_name __antlr_create_trigger_stmt_group_60 ? __antlr_create_trigger_stmt_group_63 ON_ table_name __antlr_create_trigger_stmt_group_64 ? __antlr_create_trigger_stmt_group_65 ? BEGIN_ __antlr_create_trigger_stmt_group_67 + END_ => alt_1;
+
+create_view_stmt = CREATE_ __antlr_create_view_stmt_group_68 ? VIEW_ __antlr_create_view_stmt_group_69 ? __antlr_create_view_stmt_group_70 ? view_name __antlr_create_view_stmt_group_72 ? AS_ select_stmt => alt_1;
+
+create_virtual_table_stmt = CREATE_ VIRTUAL_ TABLE_ __antlr_create_virtual_table_stmt_group_73 ? __antlr_create_virtual_table_stmt_group_74 ? table_name USING_ module_name __antlr_create_virtual_table_stmt_group_76 ? => alt_1;
+
+with_clause = WITH_ RECURSIVE_ ? common_table_expression __antlr_with_clause_group_77 * => alt_1;
+
+common_table_expression = cte_table_name AS_ __antlr_common_table_expression_group_78 ? OPEN_PAR select_stmt CLOSE_PAR => alt_1;
+
+cte_table_name = table_name __antlr_cte_table_name_group_80 ? => alt_1;
+
+delete_stmt = with_clause ? DELETE_ FROM_ qualified_table_name __antlr_delete_stmt_group_81 ? returning_clause ? order_clause ? limit_clause ? => alt_1;
+
+detach_stmt = DETACH_ DATABASE_ ? schema_name => alt_1;
+
+drop_stmt = DROP_ __antlr_drop_stmt_group_82 __antlr_drop_stmt_group_83 ? __antlr_drop_stmt_group_84 ? any_name => alt_1;
+
+expr = expr_or => alt_1;
+
+expr_or = expr_and __antlr_expr_or_group_85 * => alt_1;
+
+expr_and = expr_not __antlr_expr_and_group_86 * => alt_1;
+
+expr_not = NOT_ * expr_binary => alt_1;
+
+expr_binary = expr_comparison __antlr_expr_binary_group_99 * => alt_1;
+
+expr_comparison = expr_bitwise __antlr_expr_comparison_group_101 * => alt_1;
+
+expr_bitwise = expr_addition __antlr_expr_bitwise_group_103 * => alt_1;
+
+expr_addition = expr_multiplication __antlr_expr_addition_group_105 * => alt_1;
+
+expr_multiplication = expr_string __antlr_expr_multiplication_group_107 * => alt_1;
+
+expr_string = expr_collate __antlr_expr_string_group_109 * => alt_1;
+
+expr_collate = expr_unary __antlr_expr_collate_group_110 * => alt_1;
+
+expr_unary = __antlr_expr_unary_group_111 * expr_base => alt_1;
+
+expr_base = literal_value => alt_1
+    | BIND_PARAMETER => alt_2
+    | __antlr_expr_base_group_112 ? table_name DOT column_name => alt_3
+    | column_name_excluding_string => alt_4
+    | __antlr_expr_base_group_113 ? OPEN_PAR select_stmt CLOSE_PAR => alt_5
+    | raise_function => alt_6
+    | expr_recursive => alt_7;
+
+expr_recursive = function_name OPEN_PAR __antlr_expr_recursive_group_115 ? CLOSE_PAR percentile_clause ? filter_clause ? over_clause ? => alt_1
+    | OPEN_PAR expr __antlr_expr_recursive_group_116 * CLOSE_PAR => alt_2
+    | CAST_ OPEN_PAR expr AS_ type_name CLOSE_PAR => alt_3
+    | CASE_ expr ? __antlr_expr_recursive_group_117 + __antlr_expr_recursive_group_118 ? END_ => alt_4;
+
+raise_function = RAISE_ OPEN_PAR __antlr_raise_function_group_120 CLOSE_PAR => alt_1;
+
+literal_value = NUMERIC_LITERAL => alt_1
+    | STRING_LITERAL => alt_2
+    | BLOB_LITERAL => alt_3
+    | NULL_ => alt_4
+    | TRUE_ => alt_5
+    | FALSE_ => alt_6
+    | CURRENT_TIME_ => alt_7
+    | CURRENT_DATE_ => alt_8
+    | CURRENT_TIMESTAMP_ => alt_9;
+
+percentile_clause = WITHIN_ GROUP_ OPEN_PAR ORDER_ BY_ expr CLOSE_PAR => alt_1;
+
+value_row = OPEN_PAR expr __antlr_value_row_group_121 * CLOSE_PAR => alt_1;
+
+values_clause = VALUES_ value_row __antlr_values_clause_group_122 * => alt_1;
+
+insert_stmt = with_clause ? __antlr_insert_stmt_group_124 INTO_ __antlr_insert_stmt_group_125 ? table_name __antlr_insert_stmt_group_126 ? __antlr_insert_stmt_group_128 ? __antlr_insert_stmt_group_129 returning_clause ? => alt_1;
+
+returning_clause = RETURNING_ __antlr_returning_clause_group_131 __antlr_returning_clause_group_134 * => alt_1;
+
+upsert_clause = ON_ CONFLICT_ __antlr_upsert_clause_group_137 ? DO_ __antlr_upsert_clause_group_142 => alt_1;
+
+pragma_stmt = PRAGMA_ __antlr_pragma_stmt_group_143 ? pragma_name __antlr_pragma_stmt_group_144 ? => alt_1;
+
+pragma_value = signed_number => alt_1
+    | name => alt_2
+    | STRING_LITERAL => alt_3;
+
+reindex_stmt = REINDEX_ __antlr_reindex_stmt_group_147 ? => alt_1;
+
+select_stmt = with_clause ? select_core __antlr_select_stmt_group_148 * order_clause ? limit_clause ? => alt_1;
+
+join_clause = table_or_subquery __antlr_join_clause_group_149 * => alt_1;
+
+select_core = SELECT_ __antlr_select_core_group_150 ? result_column __antlr_select_core_group_151 * __antlr_select_core_group_152 ? __antlr_select_core_group_153 ? __antlr_select_core_group_156 ? __antlr_select_core_group_158 ? => alt_1
+    | values_clause => alt_2;
+
+table_or_subquery = __antlr_table_or_subquery_group_159 ? table_name __antlr_table_or_subquery_group_160 ? __antlr_table_or_subquery_group_161 ? => alt_1
+    | __antlr_table_or_subquery_group_162 ? table_function_name OPEN_PAR expr __antlr_table_or_subquery_group_163 * CLOSE_PAR __antlr_table_or_subquery_group_164 ? => alt_2
+    | OPEN_PAR join_clause CLOSE_PAR => alt_3
+    | OPEN_PAR select_stmt CLOSE_PAR __antlr_table_or_subquery_group_165 ? => alt_4;
+
+result_column = STAR => alt_1
+    | table_name DOT STAR => alt_2
+    | expr __antlr_result_column_group_166 ? => alt_3;
+
+join_operator = COMMA => alt_1
+    | NATURAL_ ? __antlr_join_operator_group_168 ? JOIN_ => alt_2;
+
+join_constraint = ON_ expr => alt_1
+    | USING_ OPEN_PAR column_name __antlr_join_constraint_group_169 * CLOSE_PAR => alt_2;
+
+compound_operator = UNION_ ALL_ ? => alt_1
+    | INTERSECT_ => alt_2
+    | EXCEPT_ => alt_3;
+
+update_stmt = with_clause ? UPDATE_ __antlr_update_stmt_group_171 ? qualified_table_name SET_ __antlr_update_stmt_group_172 ASSIGN expr __antlr_update_stmt_group_174 * __antlr_update_stmt_group_175 ? __antlr_update_stmt_group_176 ? returning_clause ? order_clause ? limit_clause ? => alt_1;
+
+column_name_list = OPEN_PAR column_name __antlr_column_name_list_group_177 * CLOSE_PAR => alt_1;
+
+qualified_table_name = __antlr_qualified_table_name_group_178 ? table_name __antlr_qualified_table_name_group_179 ? __antlr_qualified_table_name_group_180 ? => alt_1;
+
+vacuum_stmt = VACUUM_ schema_name ? __antlr_vacuum_stmt_group_181 ? => alt_1;
+
+filter_clause = FILTER_ OPEN_PAR WHERE_ expr CLOSE_PAR => alt_1;
+
+window_defn = OPEN_PAR base_window_name ? __antlr_window_defn_group_183 ? order_clause ? frame_spec ? CLOSE_PAR => alt_1;
+
+over_clause = OVER_ __antlr_over_clause_group_186 => alt_1;
+
+frame_spec = frame_clause __antlr_frame_spec_group_188 ? => alt_1;
+
+frame_clause = __antlr_frame_clause_group_189 __antlr_frame_clause_group_190 => alt_1;
+
+order_clause = ORDER_ BY_ ordering_term __antlr_order_clause_group_191 * => alt_1;
+
+limit_clause = LIMIT_ expr __antlr_limit_clause_group_193 ? => alt_1;
+
+ordering_term = expr __antlr_ordering_term_group_194 ? asc_desc ? __antlr_ordering_term_group_196 ? => alt_1;
+
+asc_desc = ASC_ => alt_1
+    | DESC_ => alt_2;
+
+frame_left = expr PRECEDING_ => alt_1
+    | expr FOLLOWING_ => alt_2
+    | CURRENT_ ROW_ => alt_3;
+
+frame_right = expr PRECEDING_ => alt_1
+    | expr FOLLOWING_ => alt_2
+    | CURRENT_ ROW_ => alt_3;
+
+frame_single = expr PRECEDING_ => alt_1
+    | CURRENT_ ROW_ => alt_2;
+
+error_message = expr => alt_1;
+
+filename = expr => alt_1;
+
+module_argument = module_argument_outer * => alt_1;
+
+module_argument_outer = ANTLR_NOT_SET_1 => alt_1
+    | OPEN_PAR module_argument_inner * CLOSE_PAR => alt_2;
+
+module_argument_inner = ANTLR_NOT_SET_2 => alt_1
+    | OPEN_PAR module_argument_inner * CLOSE_PAR => alt_2;
+
+fallback_excluding_conflicts = ABORT_ => alt_1
+    | ACTION_ => alt_2
+    | AFTER_ => alt_3
+    | ALWAYS_ => alt_4
+    | ANALYZE_ => alt_5
+    | ASC_ => alt_6
+    | ATTACH_ => alt_7
+    | BEFORE_ => alt_8
+    | BEGIN_ => alt_9
+    | BY_ => alt_10
+    | CASCADE_ => alt_11
+    | CAST_ => alt_12
+    | COLUMN_ => alt_13
+    | CONFLICT_ => alt_14
+    | CURRENT_ => alt_15
+    | CURRENT_DATE_ => alt_16
+    | CURRENT_TIME_ => alt_17
+    | CURRENT_TIMESTAMP_ => alt_18
+    | DATABASE_ => alt_19
+    | DEFERRED_ => alt_20
+    | DESC_ => alt_21
+    | DETACH_ => alt_22
+    | DO_ => alt_23
+    | EACH_ => alt_24
+    | END_ => alt_25
+    | EXCEPT_ => alt_26
+    | EXCLUDE_ => alt_27
+    | EXCLUSIVE_ => alt_28
+    | EXPLAIN_ => alt_29
+    | FAIL_ => alt_30
+    | FALSE_ => alt_31
+    | FIRST_ => alt_32
+    | FOLLOWING_ => alt_33
+    | FOR_ => alt_34
+    | GENERATED_ => alt_35
+    | GLOB_ => alt_36
+    | GROUPS_ => alt_37
+    | IF_ => alt_38
+    | IGNORE_ => alt_39
+    | IMMEDIATE_ => alt_40
+    | INITIALLY_ => alt_41
+    | INSTEAD_ => alt_42
+    | INTERSECT_ => alt_43
+    | KEY_ => alt_44
+    | LAST_ => alt_45
+    | LIKE_ => alt_46
+    | MATCH_ => alt_47
+    | MATERIALIZED_ => alt_48
+    | NO_ => alt_49
+    | NULLS_ => alt_50
+    | OF_ => alt_51
+    | OFFSET_ => alt_52
+    | OTHERS_ => alt_53
+    | PARTITION_ => alt_54
+    | PLAN_ => alt_55
+    | PRAGMA_ => alt_56
+    | PRECEDING_ => alt_57
+    | QUERY_ => alt_58
+    | RANGE_ => alt_59
+    | RECURSIVE_ => alt_60
+    | REGEXP_ => alt_61
+    | REINDEX_ => alt_62
+    | RELEASE_ => alt_63
+    | RENAME_ => alt_64
+    | REPLACE_ => alt_65
+    | RESTRICT_ => alt_66
+    | ROLLBACK_ => alt_67
+    | ROW_ => alt_68
+    | ROWID_ => alt_69
+    | ROWS_ => alt_70
+    | SAVEPOINT_ => alt_71
+    | STORED_ => alt_72
+    | STRICT_ => alt_73
+    | TEMP_ => alt_74
+    | TEMPORARY_ => alt_75
+    | TIES_ => alt_76
+    | TRIGGER_ => alt_77
+    | TRUE_ => alt_78
+    | UNBOUNDED_ => alt_79
+    | UNION_ => alt_80
+    | VACUUM_ => alt_81
+    | VIEW_ => alt_82
+    | VIRTUAL_ => alt_83
+    | WITH_ => alt_84
+    | WITHIN_ => alt_85
+    | WITHOUT_ => alt_86;
+
+join_keyword = CROSS_ => alt_1
+    | FULL_ => alt_2
+    | INDEXED_ => alt_3
+    | INNER_ => alt_4
+    | LEFT_ => alt_5
+    | NATURAL_ => alt_6
+    | OUTER_ => alt_7
+    | RIGHT_ => alt_8;
+
+fallback = fallback_excluding_conflicts => alt_1
+    | join_keyword => alt_2
+    | RAISE_ => alt_3;
+
+name = any_name => alt_1;
+
+function_name = any_name_excluding_raise => alt_1;
+
+schema_name = any_name => alt_1;
+
+table_name = any_name => alt_1;
+
+table_or_index_name = any_name => alt_1;
+
+column_name = any_name => alt_1;
+
+column_name_excluding_string = any_name_excluding_string => alt_1;
+
+column_alias = any_name => alt_1;
+
+collation_name = any_name => alt_1;
+
+foreign_table = any_name => alt_1;
+
+index_name = any_name => alt_1;
+
+trigger_name = any_name => alt_1;
+
+view_name = any_name => alt_1;
+
+module_name = any_name => alt_1;
+
+pragma_name = any_name => alt_1;
+
+savepoint_name = any_name => alt_1;
+
+table_alias = any_name => alt_1;
+
+table_alias_excluding_joins = any_name_excluding_joins => alt_1;
+
+window_name = any_name => alt_1;
+
+alias = any_name => alt_1;
+
+base_window_name = any_name => alt_1;
+
+table_function_name = any_name => alt_1;
+
+any_name_excluding_raise = IDENTIFIER => alt_1
+    | fallback_excluding_conflicts => alt_2
+    | join_keyword => alt_3
+    | STRING_LITERAL => alt_4;
+
+any_name_excluding_joins = IDENTIFIER => alt_1
+    | fallback_excluding_conflicts => alt_2
+    | RAISE_ => alt_3
+    | STRING_LITERAL => alt_4;
+
+any_name_excluding_string = IDENTIFIER => alt_1
+    | fallback => alt_2;
+
+any_name = IDENTIFIER => alt_1
+    | fallback => alt_2
+    | STRING_LITERAL => alt_3;
+
+__antlr_sql_stmt_list_group_1 = SCOL sql_stmt ? => alt_1;
+
+__antlr_sql_stmt_group_2 = QUERY_ PLAN_ => alt_1;
+
+__antlr_sql_stmt_group_3 = EXPLAIN_ __antlr_sql_stmt_group_2 ? => alt_1;
+
+__antlr_sql_stmt_group_4 = alter_table_stmt => alt_1
+    | analyze_stmt => alt_2
+    | attach_stmt => alt_3
+    | begin_stmt => alt_4
+    | commit_stmt => alt_5
+    | create_index_stmt => alt_6
+    | create_table_stmt => alt_7
+    | create_trigger_stmt => alt_8
+    | create_view_stmt => alt_9
+    | create_virtual_table_stmt => alt_10
+    | delete_stmt => alt_11
+    | detach_stmt => alt_12
+    | drop_stmt => alt_13
+    | insert_stmt => alt_14
+    | pragma_stmt => alt_15
+    | reindex_stmt => alt_16
+    | release_stmt => alt_17
+    | rollback_stmt => alt_18
+    | savepoint_stmt => alt_19
+    | select_stmt => alt_20
+    | update_stmt => alt_21
+    | vacuum_stmt => alt_22;
+
+__antlr_alter_table_stmt_group_5 = schema_name DOT => alt_1;
+
+__antlr_alter_table_stmt_group_6 = TO_ table_name => alt_1
+    | COLUMN_ ? column_name TO_ column_name => alt_2;
+
+__antlr_alter_table_stmt_group_7 = CONSTRAINT_ name => alt_1;
+
+__antlr_alter_table_stmt_group_8 = expr => alt_1;
+
+__antlr_alter_table_stmt_group_9 = COLUMN_ ? column_def => alt_1
+    | __antlr_alter_table_stmt_group_7 ? CHECK_ __antlr_alter_table_stmt_group_8 conflict_clause ? => alt_2;
+
+__antlr_alter_table_stmt_group_10 = COLUMN_ ? column_name => alt_1
+    | CONSTRAINT_ name => alt_2;
+
+__antlr_alter_table_stmt_group_11 = SET_ NOT_ NULL_ conflict_clause ? => alt_1;
+
+__antlr_alter_table_stmt_group_12 = DROP_ NOT_ NULL_ => alt_1;
+
+__antlr_alter_table_stmt_group_13 = __antlr_alter_table_stmt_group_11 => alt_1
+    | __antlr_alter_table_stmt_group_12 => alt_2;
+
+__antlr_alter_table_stmt_group_14 = RENAME_ __antlr_alter_table_stmt_group_6 => alt_1
+    | ADD_ __antlr_alter_table_stmt_group_9 => alt_2
+    | DROP_ __antlr_alter_table_stmt_group_10 => alt_3
+    | ALTER_ COLUMN_ ? column_name __antlr_alter_table_stmt_group_13 => alt_4;
+
+__antlr_analyze_stmt_group_15 = schema_name DOT => alt_1;
+
+__antlr_analyze_stmt_group_16 = schema_name => alt_1
+    | __antlr_analyze_stmt_group_15 ? table_or_index_name => alt_2;
+
+__antlr_begin_stmt_group_17 = DEFERRED_ => alt_1
+    | IMMEDIATE_ => alt_2
+    | EXCLUSIVE_ => alt_3;
+
+__antlr_commit_stmt_group_18 = COMMIT_ => alt_1
+    | END_ => alt_2;
+
+__antlr_rollback_stmt_group_19 = TO_ SAVEPOINT_ ? savepoint_name => alt_1;
+
+__antlr_create_index_stmt_group_20 = IF_ NOT_ EXISTS_ => alt_1;
+
+__antlr_create_index_stmt_group_21 = schema_name DOT => alt_1;
+
+__antlr_create_index_stmt_group_22 = COMMA indexed_column => alt_1;
+
+__antlr_create_index_stmt_group_23 = WHERE_ expr => alt_1;
+
+__antlr_indexed_column_group_24 = COLLATE_ collation_name => alt_1;
+
+__antlr_create_table_stmt_group_25 = TEMP_ => alt_1
+    | TEMPORARY_ => alt_2;
+
+__antlr_create_table_stmt_group_26 = IF_ NOT_ EXISTS_ => alt_1;
+
+__antlr_create_table_stmt_group_27 = schema_name DOT => alt_1;
+
+__antlr_create_table_stmt_group_28 = COMMA column_def => alt_1;
+
+__antlr_create_table_stmt_group_29 = COMMA table_constraint => alt_1;
+
+__antlr_create_table_stmt_group_30 = OPEN_PAR column_def __antlr_create_table_stmt_group_28 * __antlr_create_table_stmt_group_29 * CLOSE_PAR table_options ? => alt_1
+    | AS_ select_stmt => alt_2;
+
+__antlr_table_options_group_31 = WITHOUT_ ROWID_ => alt_1
+    | STRICT_ => alt_2;
+
+__antlr_table_options_group_32 = WITHOUT_ ROWID_ => alt_1
+    | STRICT_ => alt_2;
+
+__antlr_table_options_group_33 = COMMA __antlr_table_options_group_32 => alt_1;
+
+__antlr_type_name_group_34 = OPEN_PAR signed_number CLOSE_PAR => alt_1
+    | OPEN_PAR signed_number COMMA signed_number CLOSE_PAR => alt_2;
+
+__antlr_column_constraint_group_35 = CONSTRAINT_ name => alt_1;
+
+__antlr_column_constraint_group_36 = NOT_ ? NULL_ => alt_1
+    | UNIQUE_ => alt_2;
+
+__antlr_column_constraint_group_37 = signed_number => alt_1
+    | literal_value => alt_2
+    | OPEN_PAR expr CLOSE_PAR => alt_3;
+
+__antlr_column_constraint_group_38 = GENERATED_ ALWAYS_ => alt_1;
+
+__antlr_column_constraint_group_39 = STORED_ => alt_1
+    | VIRTUAL_ => alt_2;
+
+__antlr_column_constraint_group_40 = PRIMARY_ KEY_ asc_desc ? conflict_clause ? AUTOINCREMENT_ ? => alt_1
+    | __antlr_column_constraint_group_36 conflict_clause ? => alt_2
+    | CHECK_ OPEN_PAR expr CLOSE_PAR => alt_3
+    | DEFAULT_ __antlr_column_constraint_group_37 => alt_4
+    | COLLATE_ collation_name => alt_5
+    | foreign_key_clause => alt_6
+    | __antlr_column_constraint_group_38 ? AS_ OPEN_PAR expr CLOSE_PAR __antlr_column_constraint_group_39 ? => alt_7;
+
+__antlr_signed_number_group_41 = PLUS => alt_1
+    | MINUS => alt_2;
+
+__antlr_table_constraint_group_42 = CONSTRAINT_ name => alt_1;
+
+__antlr_table_constraint_group_43 = PRIMARY_ KEY_ => alt_1
+    | UNIQUE_ => alt_2;
+
+__antlr_table_constraint_group_44 = COMMA indexed_column => alt_1;
+
+__antlr_table_constraint_group_45 = COMMA column_name => alt_1;
+
+__antlr_table_constraint_group_46 = __antlr_table_constraint_group_43 OPEN_PAR indexed_column __antlr_table_constraint_group_44 * CLOSE_PAR conflict_clause ? => alt_1
+    | CHECK_ OPEN_PAR expr CLOSE_PAR => alt_2
+    | FOREIGN_ KEY_ OPEN_PAR column_name __antlr_table_constraint_group_45 * CLOSE_PAR foreign_key_clause => alt_3;
+
+__antlr_foreign_key_clause_group_47 = COMMA column_name => alt_1;
+
+__antlr_foreign_key_clause_group_48 = OPEN_PAR column_name __antlr_foreign_key_clause_group_47 * CLOSE_PAR => alt_1;
+
+__antlr_foreign_key_clause_group_49 = DELETE_ => alt_1
+    | UPDATE_ => alt_2;
+
+__antlr_foreign_key_clause_group_50 = NULL_ => alt_1
+    | DEFAULT_ => alt_2;
+
+__antlr_foreign_key_clause_group_51 = SET_ __antlr_foreign_key_clause_group_50 => alt_1
+    | CASCADE_ => alt_2
+    | RESTRICT_ => alt_3
+    | NO_ ACTION_ => alt_4;
+
+__antlr_foreign_key_clause_group_52 = ON_ __antlr_foreign_key_clause_group_49 __antlr_foreign_key_clause_group_51 => alt_1
+    | MATCH_ name => alt_2;
+
+__antlr_foreign_key_clause_group_53 = DEFERRED_ => alt_1
+    | IMMEDIATE_ => alt_2;
+
+__antlr_foreign_key_clause_group_54 = INITIALLY_ __antlr_foreign_key_clause_group_53 => alt_1;
+
+__antlr_foreign_key_clause_group_55 = NOT_ ? DEFERRABLE_ __antlr_foreign_key_clause_group_54 ? => alt_1;
+
+__antlr_conflict_clause_group_56 = ROLLBACK_ => alt_1
+    | ABORT_ => alt_2
+    | FAIL_ => alt_3
+    | IGNORE_ => alt_4
+    | REPLACE_ => alt_5;
+
+__antlr_create_trigger_stmt_group_57 = TEMP_ => alt_1
+    | TEMPORARY_ => alt_2;
+
+__antlr_create_trigger_stmt_group_58 = IF_ NOT_ EXISTS_ => alt_1;
+
+__antlr_create_trigger_stmt_group_59 = schema_name DOT => alt_1;
+
+__antlr_create_trigger_stmt_group_60 = BEFORE_ => alt_1
+    | AFTER_ => alt_2
+    | INSTEAD_ OF_ => alt_3;
+
+__antlr_create_trigger_stmt_group_61 = COMMA column_name => alt_1;
+
+__antlr_create_trigger_stmt_group_62 = OF_ column_name __antlr_create_trigger_stmt_group_61 * => alt_1;
+
+__antlr_create_trigger_stmt_group_63 = DELETE_ => alt_1
+    | INSERT_ => alt_2
+    | UPDATE_ __antlr_create_trigger_stmt_group_62 ? => alt_3;
+
+__antlr_create_trigger_stmt_group_64 = FOR_ EACH_ ROW_ => alt_1;
+
+__antlr_create_trigger_stmt_group_65 = WHEN_ expr => alt_1;
+
+__antlr_create_trigger_stmt_group_66 = update_stmt => alt_1
+    | insert_stmt => alt_2
+    | delete_stmt => alt_3
+    | select_stmt => alt_4;
+
+__antlr_create_trigger_stmt_group_67 = __antlr_create_trigger_stmt_group_66 SCOL => alt_1;
+
+__antlr_create_view_stmt_group_68 = TEMP_ => alt_1
+    | TEMPORARY_ => alt_2;
+
+__antlr_create_view_stmt_group_69 = IF_ NOT_ EXISTS_ => alt_1;
+
+__antlr_create_view_stmt_group_70 = schema_name DOT => alt_1;
+
+__antlr_create_view_stmt_group_71 = COMMA column_name => alt_1;
+
+__antlr_create_view_stmt_group_72 = OPEN_PAR column_name __antlr_create_view_stmt_group_71 * CLOSE_PAR => alt_1;
+
+__antlr_create_virtual_table_stmt_group_73 = IF_ NOT_ EXISTS_ => alt_1;
+
+__antlr_create_virtual_table_stmt_group_74 = schema_name DOT => alt_1;
+
+__antlr_create_virtual_table_stmt_group_75 = COMMA module_argument => alt_1;
+
+__antlr_create_virtual_table_stmt_group_76 = OPEN_PAR module_argument __antlr_create_virtual_table_stmt_group_75 * CLOSE_PAR => alt_1;
+
+__antlr_with_clause_group_77 = COMMA common_table_expression => alt_1;
+
+__antlr_common_table_expression_group_78 = NOT_ ? MATERIALIZED_ => alt_1;
+
+__antlr_cte_table_name_group_79 = COMMA column_name => alt_1;
+
+__antlr_cte_table_name_group_80 = OPEN_PAR column_name __antlr_cte_table_name_group_79 * CLOSE_PAR => alt_1;
+
+__antlr_delete_stmt_group_81 = WHERE_ expr => alt_1;
+
+__antlr_drop_stmt_group_82 = INDEX_ => alt_1
+    | TABLE_ => alt_2
+    | TRIGGER_ => alt_3
+    | VIEW_ => alt_4;
+
+__antlr_drop_stmt_group_83 = IF_ EXISTS_ => alt_1;
+
+__antlr_drop_stmt_group_84 = schema_name DOT => alt_1;
+
+__antlr_expr_or_group_85 = OR_ expr_and => alt_1;
+
+__antlr_expr_and_group_86 = AND_ expr_not => alt_1;
+
+__antlr_expr_binary_group_87 = ASSIGN => alt_1
+    | EQ => alt_2
+    | NOT_EQ1 => alt_3
+    | NOT_EQ2 => alt_4;
+
+__antlr_expr_binary_group_88 = DISTINCT_ FROM_ => alt_1;
+
+__antlr_expr_binary_group_89 = COMMA expr_comparison => alt_1;
+
+__antlr_expr_binary_group_90 = select_stmt => alt_1
+    | expr_comparison __antlr_expr_binary_group_89 * => alt_2;
+
+__antlr_expr_binary_group_91 = schema_name DOT => alt_1;
+
+__antlr_expr_binary_group_92 = schema_name DOT => alt_1;
+
+__antlr_expr_binary_group_93 = COMMA expr_comparison => alt_1;
+
+__antlr_expr_binary_group_94 = expr_comparison __antlr_expr_binary_group_93 * => alt_1;
+
+__antlr_expr_binary_group_95 = OPEN_PAR __antlr_expr_binary_group_90 ? CLOSE_PAR => alt_1
+    | __antlr_expr_binary_group_91 ? table_name => alt_2
+    | __antlr_expr_binary_group_92 ? table_function_name OPEN_PAR __antlr_expr_binary_group_94 ? CLOSE_PAR => alt_3;
+
+__antlr_expr_binary_group_96 = ESCAPE_ expr_comparison => alt_1;
+
+__antlr_expr_binary_group_97 = GLOB_ => alt_1
+    | REGEXP_ => alt_2
+    | MATCH_ => alt_3;
+
+__antlr_expr_binary_group_98 = LIKE_ expr_comparison __antlr_expr_binary_group_96 ? => alt_1
+    | __antlr_expr_binary_group_97 expr_comparison => alt_2;
+
+__antlr_expr_binary_group_99 = __antlr_expr_binary_group_87 expr_comparison => alt_1
+    | IS_ NOT_ ? __antlr_expr_binary_group_88 ? expr_comparison => alt_2
+    | NOT_ ? BETWEEN_ expr_comparison AND_ expr_comparison => alt_3
+    | NOT_ ? IN_ __antlr_expr_binary_group_95 => alt_4
+    | NOT_ ? __antlr_expr_binary_group_98 => alt_5
+    | ISNULL_ => alt_6
+    | NOTNULL_ => alt_7
+    | NOT_ NULL_ => alt_8;
+
+__antlr_expr_comparison_group_100 = LT => alt_1
+    | LT_EQ => alt_2
+    | GT => alt_3
+    | GT_EQ => alt_4;
+
+__antlr_expr_comparison_group_101 = __antlr_expr_comparison_group_100 expr_bitwise => alt_1;
+
+__antlr_expr_bitwise_group_102 = LT2 => alt_1
+    | GT2 => alt_2
+    | AMP => alt_3
+    | PIPE => alt_4;
+
+__antlr_expr_bitwise_group_103 = __antlr_expr_bitwise_group_102 expr_addition => alt_1;
+
+__antlr_expr_addition_group_104 = PLUS => alt_1
+    | MINUS => alt_2;
+
+__antlr_expr_addition_group_105 = __antlr_expr_addition_group_104 expr_multiplication => alt_1;
+
+__antlr_expr_multiplication_group_106 = STAR => alt_1
+    | DIV => alt_2
+    | MOD => alt_3;
+
+__antlr_expr_multiplication_group_107 = __antlr_expr_multiplication_group_106 expr_string => alt_1;
+
+__antlr_expr_string_group_108 = PIPE2 => alt_1
+    | JPTR => alt_2
+    | JPTR2 => alt_3;
+
+__antlr_expr_string_group_109 = __antlr_expr_string_group_108 expr_collate => alt_1;
+
+__antlr_expr_collate_group_110 = COLLATE_ collation_name => alt_1;
+
+__antlr_expr_unary_group_111 = MINUS => alt_1
+    | PLUS => alt_2
+    | TILDE => alt_3;
+
+__antlr_expr_base_group_112 = schema_name DOT => alt_1;
+
+__antlr_expr_base_group_113 = NOT_ ? EXISTS_ => alt_1;
+
+__antlr_expr_recursive_group_114 = COMMA expr => alt_1;
+
+__antlr_expr_recursive_group_115 = DISTINCT_ ? expr __antlr_expr_recursive_group_114 * order_clause ? => alt_1
+    | STAR => alt_2;
+
+__antlr_expr_recursive_group_116 = COMMA expr => alt_1;
+
+__antlr_expr_recursive_group_117 = WHEN_ expr THEN_ expr => alt_1;
+
+__antlr_expr_recursive_group_118 = ELSE_ expr => alt_1;
+
+__antlr_raise_function_group_119 = ROLLBACK_ => alt_1
+    | ABORT_ => alt_2
+    | FAIL_ => alt_3;
+
+__antlr_raise_function_group_120 = IGNORE_ => alt_1
+    | __antlr_raise_function_group_119 COMMA error_message => alt_2;
+
+__antlr_value_row_group_121 = COMMA expr => alt_1;
+
+__antlr_values_clause_group_122 = COMMA value_row => alt_1;
+
+__antlr_insert_stmt_group_123 = REPLACE_ => alt_1
+    | ROLLBACK_ => alt_2
+    | ABORT_ => alt_3
+    | FAIL_ => alt_4
+    | IGNORE_ => alt_5;
+
+__antlr_insert_stmt_group_124 = INSERT_ => alt_1
+    | REPLACE_ => alt_2
+    | INSERT_ OR_ __antlr_insert_stmt_group_123 => alt_3;
+
+__antlr_insert_stmt_group_125 = schema_name DOT => alt_1;
+
+__antlr_insert_stmt_group_126 = AS_ table_alias => alt_1;
+
+__antlr_insert_stmt_group_127 = COMMA column_name => alt_1;
+
+__antlr_insert_stmt_group_128 = OPEN_PAR column_name __antlr_insert_stmt_group_127 * CLOSE_PAR => alt_1;
+
+__antlr_insert_stmt_group_129 = select_stmt upsert_clause * => alt_1
+    | DEFAULT_ VALUES_ => alt_2;
+
+__antlr_returning_clause_group_130 = AS_ ? column_alias => alt_1;
+
+__antlr_returning_clause_group_131 = STAR => alt_1
+    | expr __antlr_returning_clause_group_130 ? => alt_2;
+
+__antlr_returning_clause_group_132 = AS_ ? column_alias => alt_1;
+
+__antlr_returning_clause_group_133 = STAR => alt_1
+    | expr __antlr_returning_clause_group_132 ? => alt_2;
+
+__antlr_returning_clause_group_134 = COMMA __antlr_returning_clause_group_133 => alt_1;
+
+__antlr_upsert_clause_group_135 = COMMA indexed_column => alt_1;
+
+__antlr_upsert_clause_group_136 = WHERE_ expr => alt_1;
+
+__antlr_upsert_clause_group_137 = OPEN_PAR indexed_column __antlr_upsert_clause_group_135 * CLOSE_PAR __antlr_upsert_clause_group_136 ? => alt_1;
+
+__antlr_upsert_clause_group_138 = column_name => alt_1
+    | column_name_list => alt_2;
+
+__antlr_upsert_clause_group_139 = column_name => alt_1
+    | column_name_list => alt_2;
+
+__antlr_upsert_clause_group_140 = COMMA __antlr_upsert_clause_group_139 ASSIGN expr => alt_1;
+
+__antlr_upsert_clause_group_141 = WHERE_ expr => alt_1;
+
+__antlr_upsert_clause_group_142 = NOTHING_ => alt_1
+    | UPDATE_ SET_ __antlr_upsert_clause_group_138 ASSIGN expr __antlr_upsert_clause_group_140 * __antlr_upsert_clause_group_141 ? => alt_2;
+
+__antlr_pragma_stmt_group_143 = schema_name DOT => alt_1;
+
+__antlr_pragma_stmt_group_144 = ASSIGN pragma_value => alt_1
+    | OPEN_PAR pragma_value CLOSE_PAR => alt_2;
+
+__antlr_reindex_stmt_group_145 = schema_name DOT => alt_1;
+
+__antlr_reindex_stmt_group_146 = table_name => alt_1
+    | index_name => alt_2;
+
+__antlr_reindex_stmt_group_147 = collation_name => alt_1
+    | __antlr_reindex_stmt_group_145 ? __antlr_reindex_stmt_group_146 => alt_2;
+
+__antlr_select_stmt_group_148 = compound_operator select_core => alt_1;
+
+__antlr_join_clause_group_149 = join_operator table_or_subquery join_constraint ? => alt_1;
+
+__antlr_select_core_group_150 = DISTINCT_ => alt_1
+    | ALL_ => alt_2;
+
+__antlr_select_core_group_151 = COMMA result_column => alt_1;
+
+__antlr_select_core_group_152 = FROM_ join_clause => alt_1;
+
+__antlr_select_core_group_153 = WHERE_ expr => alt_1;
+
+__antlr_select_core_group_154 = COMMA expr => alt_1;
+
+__antlr_select_core_group_155 = HAVING_ expr => alt_1;
+
+__antlr_select_core_group_156 = GROUP_ BY_ expr __antlr_select_core_group_154 * __antlr_select_core_group_155 ? => alt_1;
+
+__antlr_select_core_group_157 = COMMA window_name AS_ window_defn => alt_1;
+
+__antlr_select_core_group_158 = WINDOW_ window_name AS_ window_defn __antlr_select_core_group_157 * => alt_1;
+
+__antlr_table_or_subquery_group_159 = schema_name DOT => alt_1;
+
+__antlr_table_or_subquery_group_160 = AS_ table_alias => alt_1
+    | table_alias_excluding_joins => alt_2;
+
+__antlr_table_or_subquery_group_161 = INDEXED_ BY_ index_name => alt_1
+    | NOT_ INDEXED_ => alt_2;
+
+__antlr_table_or_subquery_group_162 = schema_name DOT => alt_1;
+
+__antlr_table_or_subquery_group_163 = COMMA expr => alt_1;
+
+__antlr_table_or_subquery_group_164 = AS_ ? table_alias => alt_1;
+
+__antlr_table_or_subquery_group_165 = AS_ ? table_alias => alt_1;
+
+__antlr_result_column_group_166 = AS_ ? column_alias => alt_1;
+
+__antlr_join_operator_group_167 = LEFT_ => alt_1
+    | RIGHT_ => alt_2
+    | FULL_ => alt_3;
+
+__antlr_join_operator_group_168 = __antlr_join_operator_group_167 OUTER_ ? => alt_1
+    | INNER_ => alt_2
+    | CROSS_ => alt_3;
+
+__antlr_join_constraint_group_169 = COMMA column_name => alt_1;
+
+__antlr_update_stmt_group_170 = ROLLBACK_ => alt_1
+    | ABORT_ => alt_2
+    | REPLACE_ => alt_3
+    | FAIL_ => alt_4
+    | IGNORE_ => alt_5;
+
+__antlr_update_stmt_group_171 = OR_ __antlr_update_stmt_group_170 => alt_1;
+
+__antlr_update_stmt_group_172 = column_name => alt_1
+    | column_name_list => alt_2;
+
+__antlr_update_stmt_group_173 = column_name => alt_1
+    | column_name_list => alt_2;
+
+__antlr_update_stmt_group_174 = COMMA __antlr_update_stmt_group_173 ASSIGN expr => alt_1;
+
+__antlr_update_stmt_group_175 = FROM_ join_clause => alt_1;
+
+__antlr_update_stmt_group_176 = WHERE_ expr => alt_1;
+
+__antlr_column_name_list_group_177 = COMMA column_name => alt_1;
+
+__antlr_qualified_table_name_group_178 = schema_name DOT => alt_1;
+
+__antlr_qualified_table_name_group_179 = AS_ alias => alt_1;
+
+__antlr_qualified_table_name_group_180 = INDEXED_ BY_ index_name => alt_1
+    | NOT_ INDEXED_ => alt_2;
+
+__antlr_vacuum_stmt_group_181 = INTO_ filename => alt_1;
+
+__antlr_window_defn_group_182 = COMMA expr => alt_1;
+
+__antlr_window_defn_group_183 = PARTITION_ BY_ expr __antlr_window_defn_group_182 * => alt_1;
+
+__antlr_over_clause_group_184 = COMMA expr => alt_1;
+
+__antlr_over_clause_group_185 = PARTITION_ BY_ expr __antlr_over_clause_group_184 * => alt_1;
+
+__antlr_over_clause_group_186 = window_name => alt_1
+    | OPEN_PAR base_window_name ? __antlr_over_clause_group_185 ? order_clause ? frame_spec ? CLOSE_PAR => alt_2;
+
+__antlr_frame_spec_group_187 = NO_ OTHERS_ => alt_1
+    | CURRENT_ ROW_ => alt_2
+    | GROUP_ => alt_3
+    | TIES_ => alt_4;
+
+__antlr_frame_spec_group_188 = EXCLUDE_ __antlr_frame_spec_group_187 => alt_1;
+
+__antlr_frame_clause_group_189 = RANGE_ => alt_1
+    | ROWS_ => alt_2
+    | GROUPS_ => alt_3;
+
+__antlr_frame_clause_group_190 = frame_single => alt_1
+    | BETWEEN_ frame_left AND_ frame_right => alt_2;
+
+__antlr_order_clause_group_191 = COMMA ordering_term => alt_1;
+
+__antlr_limit_clause_group_192 = OFFSET_ => alt_1
+    | COMMA => alt_2;
+
+__antlr_limit_clause_group_193 = __antlr_limit_clause_group_192 expr => alt_1;
+
+__antlr_ordering_term_group_194 = COLLATE_ collation_name => alt_1;
+
+__antlr_ordering_term_group_195 = FIRST_ => alt_1
+    | LAST_ => alt_2;
+
+__antlr_ordering_term_group_196 = NULLS_ __antlr_ordering_term_group_195 => alt_1;
