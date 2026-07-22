@@ -1,4 +1,4 @@
-# Prior-art sweep for minimal-lr1-tables.md
+# Prior-art sweeps for minimal-lr1-tables.md and resolve-then-minimize.md
 
 Deep-research run, 2026-07-17. 42/100 agents completed before hitting the session
 limit; search and deep-read stages are essentially complete, adversarial
@@ -172,6 +172,126 @@ Claims under test:
   precedence climbing, Swift `precedencegroup`, Haskell fixity). Safe to
   restore the §5 claim with its "to our knowledge" hedge and the existing
   GLR/`%dprec` distinction.
+
+## Verification sweep 2026-07-22 — five parallel agents (full record)
+
+Five background agents (three haiku, two sonnet), one per open queue item.
+Method caveat that applies to agents 4 and 5: the sandbox egress policy
+blocked most primary-PDF hosts (arxiv.org, dl.acm.org, mirrors), so those
+verdicts are triangulated from tables of contents, verbatim-recurring
+abstracts, and secondary literature — the primary texts must still be read
+before camera-ready. Agents 1–3 worked against live official documentation
+and are correspondingly stronger.
+
+### Agent 1 — runtime-precedence tool survey (haiku, docs-level). CONFIRMED
+
+Question: does any deterministic LR parser generator keep both actions of a
+conflicted cell in its tables and decide at parse time from token data?
+
+| tool | construction (corrected where noted) | precedence | verdict |
+|---|---|---|---|
+| GNU Bison (LR modes) | LALR/IELR/canonical | %left/%right/%nonassoc/%prec | static |
+| Berkeley Yacc | LALR | yacc declarations | static |
+| Menhir | LR(1), Pager (agent said LALR — corrected) | %left/%right/%nonassoc | static |
+| Happy | LALR | %left/%right/%nonassoc | static |
+| CUP | LALR | declarations + contextual %prec | static |
+| Lemon | LALR | %left/%right/%nonassoc | static |
+| Hyacc | LR(1) PGM (agent said "LALR variant" — corrected) | yacc declarations | static |
+| LALRPOP | LR(1) lane table | none | n/a |
+| PLY | LALR | precedence tuple | static |
+| SLY | LALR | precedence attribute | static |
+| Racc | LALR | precedence table | static |
+| Rustemo (LR mode) | LR | static declarations | static |
+| Jison (LR modes) | SLR/LALR/LR | %left/%right/%nonassoc | static |
+
+Parse-time precedence found only in GLR systems: tree-sitter
+`prec.dynamic` ("applied at runtime instead of at parser generation time …
+picks the subtree whose corresponding rule has the highest total dynamic
+precedence"), Bison GLR `%dprec` ("first finding one whose rule has the
+highest dynamic precedence"), Lezer (opt-in GLR), Happy-GLR. Non-LR
+runtime-precedence systems, for the qualifier: Prolog `op/3`
+(operator-precedence reader), Pratt/precedence climbing (hand-written),
+Swift `precedencegroup`, Haskell fixity. ANTLR is LL. Sources: official
+manuals, URLs in resolve-then-minimize.md Appendix A.
+
+Action taken: §5 novelty claim restored with survey basis; Appendix A added
+to resolve-then-minimize.md with tables, quotes, and scope statement.
+
+### Agent 2 — langcc / Hyacc characterization (haiku, search-level). PARTIAL
+
+langcc CONFIRMED: CPS grammar transformation ("a novel transformation for
+LR grammars we call 'continuation-passing style'"), optimized NFA
+construction ("drastically reduces the number of states required"),
+construction-time k-follow-set partitioning, XLR bounded nondeterminism.
+NOT FOUND (do not reuse): "vertex accept-actions", "backward conflict
+propagation on the LR(0) NFA", "rejects Pager-style processing on
+efficiency grounds". Hyacc CONFIRMED: Pager's PGM with weak-compatibility
+merging during construction; UPE + UPE-Ext as post-hoc unit-production
+elimination. NOT FOUND: "duplicate-action-row hash merge".
+
+Action taken: langcc restored to related work as [13] using only the
+confirmed characterization; unverified phrases marked do-not-reuse above.
+
+### Agent 3 — Bison manual (haiku, against gnu.org 3.8.2). FULLY VERIFIED
+
+§5.8.1 "LR Table Construction" (`lr.type`: lalr/ielr/canonical-lr);
+§5.8.2 "Default Reductions" (`lr.default-reduction`: most/consistent/
+accepting; delayed-detection passage quoted: "the parser sometimes fails
+to detect the syntax error until it reaches a later state"); §5.8.3 LAC
+(`parse.lac`: none/full; "solves these problems for canonical LR, IELR,
+and LALR without sacrificing %nonassoc, default reductions, or state
+merging"); §5.9 "Generalized LR (GLR) Parsing" (`%dprec` GLR-only). The
+manual explicitly documents the %nonassoc-masking caveat.
+
+Action taken: [12] now cites version + section numbers; §4.3's %nonassoc
+caveat upgraded to "documented, with LAC as Bison's repair".
+
+### Agent 4 — Aho & Johnson 1974 (sonnet, PDFs blocked). LIKELY WRONG REF
+
+Bibliography exactly correct (ACM Comput. Surv. 6(2):99–124, June 1974,
+doi:10.1145/356628.356629). But the reconstructed table of contents shows
+its "Optimization of LR Parsers" section covers merging identical states,
+subsuming states, and unit-production elimination — state-count reduction,
+not row-level default reductions. ~10 searches found no link between this
+survey and default reductions; Xin Chen's dissertation (fetched, searched)
+discusses default reductions (yacc `yydefact`) citing a different lineage.
+Recommended replacements, ranked: Anderson–Eve–Horning 1973 (Acta Inf.
+2:12–39); Joliat 1973 (CSRG-28, Toronto — "probably the first to suggest
+factoring out the error entries"); Johnson, Yacc CSTR 32, 1975 (earliest
+implementation); Dragon Book §4.7 (modern treatment).
+
+Action taken: [11] replaced by Joliat 1973; [14] Johnson Yacc CSTR 32
+added; §4.3 and §7 sentences reworded. Joliat and the yacc TR are
+search-verified only — read before camera-ready; AEH 1973 is the fallback.
+
+### Agent 5 — Yang arXiv:2110.00776 (sonnet, PDFs blocked). RECONSTRUCTED
+
+Abstract confirmed verbatim (recurred identically across queries):
+node-coloring reduced *indirectly* — graph → CFG → canonical LR(1)
+machine — with incremental construction from a two-node template grammar.
+High-confidence paraphrase: constructed machine has 4n^2−2n+3 states
+(polynomial in the graph); graph k-colorable iff n−k "similar"
+(same-core) state pairs mergeable; merge constraints = no reduce/reduce
+conflict + successor consistency (merging two states requires their
+successors merged). KEY FINDING: the hardness is merge-selection on a
+GIVEN, deterministically built machine; no "don't-care/completion/
+non-transitive compatibility" language could be found in Yang's own text —
+that framing was ours. Possible earlier version: "Extended LALR(1)
+Parsing," ICAS 2018 (moderate confidence). Before camera-ready: pull the
+PDF and confirm the numbered theorem, the state-count formula, and the
+absence of completion language.
+
+Action taken: §4.5 rewritten to state Yang's result as reconstructed, with
+the completion equivalence explicitly marked as our observation; related-
+work sentence aligned; disclaimer sharpened (nothing claims to reach
+Yang's optimum).
+
+### Sweep cost and residue
+
+~334k subagent tokens, five agents, ~7 minutes wall-clock. Remaining
+before submission: primary reads of Yang, Joliat, yacc CSTR 32; C++ row
+into the automated Bison regression; the old 42/100 sweep's unfinished
+votes (Pager, Honalee, IELR — none currently load-bearing).
 
 ## Still outstanding (workflow died at 42/100 agents)
 
