@@ -139,6 +139,16 @@ Claims under test:
   Happy, CUP, lemon, Hyacc, tree-sitter/Lezer (GLR-family, distinguish), ANTLR
   (LL, distinguish), and operator-precedence/Pratt systems (Prolog `op/3`,
   Swift) that offer runtime precedence but are not LR generators.
+- **Sweep run 2026-07-22 (single doc-level agent): claim CONFIRMED.** 13+
+  deterministic LR generators checked (Menhir, LALRPOP, Happy, CUP, Lemon,
+  Hyacc, Bison-LALR, Byacc, Racc, PLY, SLY, Rustemo, Jison): all static
+  precedence or none. Runtime-decided precedence found only in GLR systems
+  (tree-sitter `prec.dynamic` — "applied at runtime… picks the subtree whose
+  rule has the highest total dynamic precedence"; Lezer opt-in GLR; Bison
+  `%dprec` GLR-only) and non-generator systems (Prolog `op/3`, Pratt/
+  precedence climbing, Swift `precedencegroup`, Haskell fixity). Safe to
+  restore the §5 claim with its "to our knowledge" hedge and the existing
+  GLR/`%dprec` distinction.
 
 ## Still outstanding (workflow died at 42/100 agents)
 
