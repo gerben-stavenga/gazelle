@@ -47,15 +47,18 @@ resolution is applied in precisely the contexts in which each action arose.
 
 The difficulty is size. The canonical automaton for the SQLite grammar used
 in this paper contains 66,539 item sets. Its IELR automaton has 1,340 states.
-This is a question about how many states the machine has, not how the eventual
-action/goto matrix is packed into bytes. Sparse-row encodings, shared defaults,
-and similar storage techniques remain valuable. Pure encodings of a fixed
-matrix are orthogonal and can be applied after either machine has been
-constructed. Default reductions sit at the boundary: they alter error behavior
-to make rows cheaper to encode, and Gazelle repurposes that same kind of
-alteration to expose state equivalence. This paper concerns the state-count
-objective.
-This gap explains the usual construction order: build or approximate the small
+
+Size here is a question about how many states the machine has, not about how
+the eventual action/goto matrix is packed into bytes. Sparse-row encodings,
+shared defaults, and similar storage techniques remain valuable; pure
+encodings of a fixed matrix are orthogonal and can be applied after either
+machine has been constructed. Default reductions sit at the boundary: they
+alter error behavior to make rows cheaper to encode, and Gazelle repurposes
+that same kind of alteration to expose state equivalence. This paper concerns
+the state-count objective.
+
+The two-orders-of-magnitude gap explains the usual construction order: build
+or approximate the small
 machine first, then perform conflict analysis on it. Unfortunately,
 merging LR(1) contexts can create new conflicts, and it can also change how a
 real conflict is resolved. Pager's method restricts construction-time merges
