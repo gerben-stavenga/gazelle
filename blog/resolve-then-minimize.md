@@ -30,10 +30,11 @@ IELR mode: the bare comparison form of a 292-line C++ grammar falls from 5,350
 canonical states to 601, while LALR has 571 states and would change resolved
 behavior. The production Gazelle grammar retains its terminal resolution
 modifiers and has 632 states; the difference is the cost of preserving those
-additional semantics. Equality of state counts is evidence about compactness, not a proof
-that the constructions produce isomorphic machines or equally sized encoded
-tables. The result is a simpler route to a canonical-LR-equivalent parser whose
-state count, on the bare grammars evaluated here, is the same as IELR.
+additional semantics. Equality of state counts is evidence about compactness,
+not a proof that the constructions produce isomorphic machines or equally
+sized encoded tables. The result is a simpler route to a
+canonical-LR-equivalent parser whose state count, on the bare grammars
+evaluated here, is the same as IELR.
 
 ## 1. Introduction
 
@@ -196,9 +197,8 @@ to `[X -> . gamma, b]` for its productions and every
 `b in FIRST(beta a)`. This is the familiar item-NFA formulation of canonical
 LR construction [6, 7].
 
-Gazelle adds one **reduce state** `R_r` for every production *r* — an
-accepting state in the lexer sense. For every
-completed item `[A -> beta ., a]`, it adds
+Gazelle adds one **reduce state** `R_r` for every production *r* — an accepting
+state in the lexer sense. For every completed item `[A -> beta ., a]`, it adds
 
 ```text
 [A -> beta ., a] --a--> R_r .
@@ -274,11 +274,13 @@ The representation changes where actions live, not which actions the
 canonical construction computes.
 
 **Proposition 1 (canonical correspondence).** Projecting reduce nodes out of
-each reachable subset state yields the canonical LR(1) item set reached by the
-same viable prefix. For every terminal and nonterminal, the encoded machine
+each reachable item-bearing subset state yields the canonical LR(1) item set
+reached by the same symbol path, and every reachable canonical item set occurs
+as such a projection. Pure reduce subsets represent action outputs and project
+to the empty set. For every terminal and nonterminal, the encoded machine
 contains the corresponding shift, goto, or reduce edge if and only if the
-conventional canonical table contains that action. The projection is
-many-to-one: a hybrid state and a pure item state can share one item set, so
+conventional canonical table contains that action. The item-bearing projection
+is many-to-one: a hybrid state and a pure item state can share one item set, so
 the encoded machine may carry more physical states than the canonical
 automaton has item sets (§6.1 accounts for the duplicates when counting).
 
@@ -396,11 +398,12 @@ reductions is the classical **default reduction**, used for LR table
 compression since the earliest implementations [11]: a generator elects one
 reduction of a state to stand for every unspecified lookahead, accepting
 delayed error detection in exchange for compact rows. Bison performs exactly
-this transformation under `%define lr.default-reduction` [12]. Gazelle
-changes only the *selection policy*. Classical defaults choose one reduction
-per state, to compress that state's row; Gazelle chooses per terminal, and
-aligns the choices across states with the same LR(0) core, to make whole
-rows equal — compression of the state *set* rather than of a single row.
+this transformation under `%define lr.default-reduction` [12]. For the
+pre-minimization completion, Gazelle changes only the *selection policy*.
+Classical defaults choose one reduction per state, to compress that state's
+row; Gazelle chooses per terminal, and aligns the choices across states with
+the same LR(0) core, to make whole rows equal — compression of the state *set*
+rather than of a single row.
 Recognition and accepted-input action traces cannot tell these insertions
 apart: in both, an error entry is replaced by a reduction that no successful
 parse consults. Failed-parse behavior can distinguish them. The policies may
@@ -483,11 +486,11 @@ occurrence of `A` after `beta` is reduced. Canonical LR(1) lookahead propagation
 would then include `a` on that completed item and put a reduce action in the
 original cell, contradicting that the cell was an error. Thus an inserted
 reduction preserves the non-viability of the held lookahead. The repetition
-is licensed by an invariant worth stating: each inserted reduction is a
-locally legal parse step, so the stack still encodes a viable prefix after
-it, and the argument applies verbatim at the next inserted edge. A doomed
-run therefore never reaches a shift of the held token or an accepting
-configuration.
+is licensed by an invariant worth stating: the completed LR(0) item certifies
+that `beta` is a handle independently of the held lookahead, so reducing it
+preserves the viable-prefix invariant even though `a` is not valid there. The
+argument therefore applies verbatim at the next inserted edge. A doomed run
+never reaches a shift of the held token or an accepting configuration.
 
 The parser may pop and reduce before discovering the error, but it rejects
 without consuming the offending token: the correct-prefix property is
