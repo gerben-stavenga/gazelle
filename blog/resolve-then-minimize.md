@@ -124,11 +124,12 @@ token in hand. A shift follows a terminal transition and pushes its target. A
 reduction by `A -> beta` removes `|beta|` states, exposes a predecessor state,
 and follows its transition on `A`. The lookahead token is not consumed by a
 reduction; several reductions may occur before it is finally shifted. Two
-standard terms recur below: a **viable prefix** is a grammar-symbol string
-that can appear as the stack during some run extendable to acceptance, and a
-**handle** is a top-of-stack right-hand-side occurrence that a correct
-reduction removes — a property of the prefix, gated but not created by the
-lookahead.
+standard terms recur below: a **viable prefix** is a grammar-symbol sequence
+represented by the parser's state stack that can occur without passing the
+right end of a handle. A **handle** is a right-hand-side occurrence whose
+replacement by its left-hand side is one step in reversing a rightmost
+derivation. Lookahead determines whether that handle may be reduced now; it
+does not make the occurrence a handle.
 
 In a conventional presentation, the automaton transition relation supplies
 shift and goto entries while a separate action table supplies reductions. If
@@ -570,8 +571,12 @@ Because the labels differ, subset construction and minimization see an
 ordinary deterministic automaton. During table extraction, `shift` and
 `reduce` declarations select their named branch statically. The `prec` and
 `conflict` declarations combine the two columns into a `shift-or-reduce`
-entry. For `prec`, the incoming token's precedence and associativity choose
-one branch at runtime.
+entry. For `prec`, the pending construct carries precedence `p_stack` and the
+incoming token carries `p_token`. A higher `p_token` shifts; a lower one
+reduces. At equal levels, left associativity reduces and right associativity
+shifts. Thus, while parsing `1 + 2 * 3`, the incoming `*` shifts over the
+pending `+`, whereas a following `+` causes the pending `*` expression to
+reduce.
 
 Completion needs one additional guard. A state may lack `OP_reduce` while
 having a real `OP` shift. Filling the virtual gap would not merely add a
@@ -585,19 +590,30 @@ comparison, supplies the answer per token. Gazelle uses this explicit feedback
 channel for C's typedef ambiguity; the contextual decision remains in the
 lexer, but its effect on parsing is represented directly in the table.
 
-Deferral also serves as a validation of the construction order itself. A
-deferred cell must be correct under *both* of its answers, in exactly the
-contexts where the canonical machine has the question — a condition Gazelle
-checks with the one local guard above, because the canonical automaton is
-present. IELR's inadequacy analysis compares statically resolved outcomes
-against a canonical automaton it never builds; supporting deferral would
-enlarge its outcome domain, strengthen "merging changed the winner" to
-"merging changed either branch," and add "canonical asks no question here"
-to the facts its annotations must reconstruct. We know of no LALR- or
-IELR-based generator with runtime precedence, and we believe this is the
-architectural reason: deferral composes with resolve-then-minimize and
-compounds merge-then-repair. This is an argument about proof obligations,
-not an impossibility result.
+Deferral makes the advantage of the construction order concrete. A deferred
+cell may contain only actions available in the corresponding canonical cell;
+otherwise runtime data could select an action that the canonical machine never
+offered in that context. Gazelle preserves this invariant by separating shift
+and reduce branches before determinization and retaining their distinct labels
+through minimization. Completion needs one additional guard: it must not add a
+virtual reduce branch beside an existing real-symbol shift, because that would
+manufacture a deferred question where the canonical machine had an
+unconditional answer.
+
+An inadequacy-elimination construction could support the same semantics, but
+its annotations would have to preserve an unresolved set of actions rather
+than only the result of static conflict resolution. In particular, it would
+need to distinguish “both branches are canonically available” from “only one
+branch exists here.” This is a larger proof obligation, not an impossibility
+result. Bison's `%dprec` is superficially related but operates in GLR mode by
+ranking surviving parses [12]; Gazelle instead chooses one action on a single
+deterministic LR stack before either branch executes.
+
+Gazelle's regression suite compares this runtime decision with a conventional
+fixed grammar hierarchy for all 1,093 operator sequences containing up to
+seven operands and three precedence levels. The two parsers produce identical
+abstract syntax trees in every case. This is bounded validation of the runtime
+mechanism, not a proof for arbitrary grammars.
 
 The transition system preserves both branches until runtime, and partition
 refinement keeps apart exactly the states whose labeled choices differ. A
@@ -870,5 +886,5 @@ stack activity,” *The Computer Journal* 48(5), pp. 565–587, 2005.
 6(2), pp. 99–124, 1974.
 
 [12] Free Software Foundation, *Bison: The Yacc-compatible Parser Generator*,
-manual §§5.8.1–5.8.2, “LR Table Construction” and “Default Reductions”
-(`%define lr.default-reduction`).
+manual sections “Generalized LR Parsing,” “LR Table Construction,” and
+“Default Reductions” (`%dprec`, `%define lr.default-reduction`).
