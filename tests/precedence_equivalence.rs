@@ -1,7 +1,7 @@
 //! Test that dynamic precedence parsing matches fixed grammar parsing.
 //!
-//! Generates all expressions with +, *, ^ operators up to 5 numbers
-//! and verifies both approaches produce identical ASTs.
+//! Generates all expressions with +, *, ^ operators up to 7 numbers
+//! (1,093 sequences) and verifies both approaches produce identical ASTs.
 
 use gazelle::Precedence;
 use gazelle_macros::gazelle;

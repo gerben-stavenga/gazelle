@@ -124,12 +124,12 @@ token in hand. A shift follows a terminal transition and pushes its target. A
 reduction by `A -> beta` removes `|beta|` states, exposes a predecessor state,
 and follows its transition on `A`. The lookahead token is not consumed by a
 reduction; several reductions may occur before it is finally shifted. Two
-standard terms recur below: a **viable prefix** is a grammar-symbol sequence
-represented by the parser's state stack that can occur without passing the
-right end of a handle. A **handle** is a right-hand-side occurrence whose
-replacement by its left-hand side is one step in reversing a rightmost
-derivation. Lookahead determines whether that handle may be reduced now; it
-does not make the occurrence a handle.
+standard terms recur below: a **handle** is a right-hand-side occurrence
+whose replacement by its left-hand side is one step in reversing a rightmost
+derivation, and a **viable prefix** is a grammar-symbol sequence represented
+by the parser's state stack that can occur without passing the right end of
+a handle. Lookahead determines whether a handle may be reduced now; it does
+not make the occurrence a handle.
 
 In a conventional presentation, the automaton transition relation supplies
 shift and goto entries while a separate action table supplies reductions. If
@@ -595,10 +595,9 @@ cell may contain only actions available in the corresponding canonical cell;
 otherwise runtime data could select an action that the canonical machine never
 offered in that context. Gazelle preserves this invariant by separating shift
 and reduce branches before determinization and retaining their distinct labels
-through minimization. Completion needs one additional guard: it must not add a
-virtual reduce branch beside an existing real-symbol shift, because that would
-manufacture a deferred question where the canonical machine had an
-unconditional answer.
+through minimization; the completion guard above enforces the same invariant
+at the one place completion could otherwise violate it, by manufacturing a
+deferred question where the canonical machine had an unconditional answer.
 
 An inadequacy-elimination construction could support the same semantics, but
 its annotations would have to preserve an unresolved set of actions rather
