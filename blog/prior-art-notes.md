@@ -130,10 +130,17 @@ Claims under test:
   selection policy; classical per-state defaults are a special case of the
   insertion conditions (error entry only + extends an existing reduction's
   lookahead set).
-- **[unverified]** Aho & Johnson, "LR parsing," ACM Computing Surveys 6(2),
-  1974 — cited [11] for default reductions/table compaction; confirm it
-  actually discusses default actions on error entries and delayed error
-  detection.
+- Aho & Johnson 1974: **CHECKED 2026-07-22, verdict likely-wrong for the
+  default-reduction claim** (its optimization section is state
+  merging/subsuming/unit-production elimination, not row defaults; primary
+  PDF unreachable in-session, verdict from ToC + ~10 corroborating
+  searches). REPLACED in resolve-then-minimize.md by [11] Joliat 1973
+  (CSRG-28, "first to suggest factoring out the error entries" per
+  secondary sources) and [14] Johnson, Yacc CSTR 32, 1975 (earliest
+  implementation, per-state yydefact defaults). Both replacements are
+  search-verified only — read Joliat's TR and the yacc report before
+  camera-ready. Alternative if Joliat is unobtainable: Anderson, Eve &
+  Horning, "Efficient LR(1) parsers," Acta Informatica 2:12-39, 1973.
 - Bison manual [12]: **VERIFIED 2026-07-22** against 3.8.2 — §5.8.1 LR Table
   Construction (lr.type: lalr/ielr/canonical-lr), §5.8.2 Default Reductions
   (lr.default-reduction: most/consistent/accepting; delayed-detection quote

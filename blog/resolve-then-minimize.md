@@ -400,8 +400,9 @@ new edge can postpone rejection but cannot create an accepted sentence.
 ### 4.3 Completion as a default-reduction policy
 
 The transformation in this step is not new. Replacing error entries by
-reductions is the classical **default reduction**, used for LR table
-compression since the earliest implementations [11]: a generator elects one
+reductions is the classical **default reduction**, proposed in the early
+table-compaction literature and implemented since the original yacc
+[11, 14]: a generator elects one
 reduction of a state to stand for every unspecified lookahead, accepting
 delayed error detection in exchange for compact rows. Bison performs exactly
 this transformation under `%define lr.default-reduction` [12]. For the
@@ -777,9 +778,11 @@ small rather than shrinking it afterwards. That route and the post-hoc one
 taken here — materialize, resolve, complete, quotient — are complementary
 rather than competing.
 
-Default reductions are long-standing table-compression practice, documented
-in the early LR literature [11] and implemented in Bison [12], together with
-the delayed error detection they cause. Their classical use compresses one
+Default reductions are long-standing table-compression practice: Joliat
+proposed treating error entries as replaceable in LR tables [11], yacc's
+generated tables carried per-state defaults from the start [14], and Bison
+documents the technique today together with the delayed error detection it
+causes [12]. Their classical use compresses one
 state's row. §4.3 reuses the identical transformation with a selection
 policy chosen instead to align rows across same-core states — which is what
 makes the latent equivalence visible to partition refinement.
@@ -895,8 +898,8 @@ doi:10.14279/depositonce-276.
 [10] E. Scott and A. Johnstone, “Generalized bottom up parsers with reduced
 stack activity,” *The Computer Journal* 48(5), pp. 565–587, 2005.
 
-[11] A. V. Aho and S. C. Johnson, “LR parsing,” *ACM Computing Surveys*
-6(2), pp. 99–124, 1974.
+[11] M. L. Joliat, “On the reduced matrix representation of LR(k) parser
+tables,” Technical Report CSRG-28, University of Toronto, 1973.
 
 [12] Free Software Foundation, *Bison: The Yacc-compatible Parser Generator*,
 version 3.8.2, manual §5.8.1 “LR Table Construction,” §5.8.2 “Default
@@ -905,3 +908,6 @@ Reductions,” §5.8.3 “LAC,” and §5.9 “Generalized LR (GLR) Parsing”
 `%dprec`).
 
 [13] J. Zimmerman, “Practical LR parser generation,” arXiv:2209.08383, 2022.
+
+[14] S. C. Johnson, “Yacc: Yet Another Compiler-Compiler,” Computing Science
+Technical Report 32, Bell Laboratories, Murray Hill, NJ, 1975.
