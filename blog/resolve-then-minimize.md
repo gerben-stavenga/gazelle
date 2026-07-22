@@ -1236,3 +1236,92 @@ the [Lezer guide](https://lezer.codemirror.net/docs/guide/#ambiguity), and
 SWI-Prolog's [`op/3`
 reference](https://www.swi-prolog.org/pldoc/man?predicate=op/3). All web
 sources were accessed in July 2026.
+
+## Appendix B. The user-facing surface of the resolution model
+
+The classification of §4.1 and the table-local boundary of §5 are not
+internal bookkeeping; they are Gazelle's programming model. This appendix
+exhibits the small API surface through which a user states resolution
+policies and supplies runtime decisions. The purpose is to show that the
+paper's constructs are directly programmable, not to survey the generator's
+interface: typed semantic actions, tree construction, and error recovery are
+engineering outside this paper's scope and are documented with the
+implementation.
+
+### B.1 Terminal kinds declare the resolution policy
+
+A grammar names its terminals with an optional modifier:
+
+```text
+terminals {
+    NUM: _,           // plain: participating in a conflict is an error
+    shift ELSE,       // static: resolve shift/reduce to shift (dangling else)
+    prec OP: _,       // deferred: shunting-yard over per-token precedence
+    conflict SEP: _,  // deferred: the token itself selects shift or reduce
+}
+```
+
+Each declaration selects, per terminal, the policy §4.1 applies to
+conflicted cells of the canonical machine. `shift` and `reduce` are applied
+at construction and yield ordinary table entries that participate in
+completion like any other. `prec` and `conflict` produce the deferred
+shift-or-reduce cells of §5, represented through the real/virtual branch
+labels and protected by the completion guard described there. A plain
+terminal involved in a conflict fails generation, and the report cites
+canonical contexts, so a diagnosis like §2.1's migration example points at
+the state where the conflict arises rather than at a merged artifact. A
+grammar with counted, intentional plain conflicts may declare totals
+(`expect 19 sr;`), mirroring Yacc practice.
+
+### B.2 Deferred decisions arrive as token data
+
+A `prec` or `conflict` terminal's payload carries the resolution datum,
+produced by the lexer together with the token:
+
+```rust
+"+"  => ('+', Precedence::Left(6)),
+"*"  => ('*', Precedence::Left(7)),
+"**" => ('*', Precedence::Right(9)),
+```
+
+where the runtime vocabulary is exactly
+
+```rust
+pub enum Precedence { Left(u8), Right(u8) }
+pub enum Resolution { Prec(Precedence), Shift, Reduce }
+```
+
+This is everything that crosses §5's boundary. For `prec`, the parser
+compares the token's level and associativity against the pending construct's
+precedence, re-evaluating after every reduction inside a single `push` — the
+`1 + 2 * 3 * 4` schedule of §5. For `conflict`, the token carries one fixed
+`Shift` or `Reduce` for that push. Because operators are ordinary data, a
+precedence table can be extended while parsing; user-defined operators
+require no grammar change and no table regeneration.
+
+### B.3 The push loop and where context lives
+
+Generated parsers are push-based: the caller owns the loop and feeds one
+token at a time.
+
+```rust
+loop {
+    let token = lexer.next(&actions.ctx)?;  // lexer may read parser-updated state
+    parser = parser.push(token, &mut actions)?;
+}
+```
+
+Push-mode LR parsing itself is standard — Bison offers `%define
+api.push-pull` — so the exhibit here is not the loop but the division of
+labor it makes explicit. The lexer, which naturally owns left context,
+computes the token and its resolution datum; this generalizes the
+`IDENT`/`KEYWORD` priority device of §4.1 from choosing a token kind to
+choosing a parse action. The parser then selects among the actions of the
+current cell using only that datum and the bounded stack metadata of §5.
+History-dependence is thereby located in token production, where context is
+legitimately available, rather than in action selection, which Appendix A.4
+shows cannot soundly reconstruct context erased by a merged table. Semantic
+actions may in turn update state that the lexer reads on the next iteration
+— the classical C `typedef` feedback — without widening the resolver's
+boundary: whatever the lexer learns still reaches the parser only as the
+next token and its datum.
