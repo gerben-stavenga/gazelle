@@ -614,7 +614,8 @@ operator precedence: a survey of the documentation of thirteen generators
 Rustemo, Jison) found only generation-time precedence declarations, with
 parse-time precedence appearing solely in GLR systems — tree-sitter's
 dynamic precedence, Bison's `%dprec` — where it ranks forked parses, and in
-hand-written Pratt-style parsers outside the generator setting.
+hand-written Pratt-style parsers outside the generator setting. Appendix A
+records the survey.
 
 Deferral imposes a different proof obligation on a merge-first construction.
 IELR's inadequacy analysis is designed to preserve the result of static
@@ -926,3 +927,77 @@ Reductions,” §5.8.3 “LAC,” and §5.9 “Generalized LR (GLR) Parsing”
 
 [14] S. C. Johnson, “Yacc: Yet Another Compiler-Compiler,” Computing Science
 Technical Report 32, Bell Laboratories, Murray Hill, NJ, 1975.
+
+## Appendix A. Survey: precedence support in parser generators
+
+This appendix records the survey behind §5's claim that no deterministic LR
+parser generator offers runtime operator precedence. The survey is
+documentation-level: for each tool, the official manual or reference was
+checked (July 2026) for any mechanism that keeps both actions of a
+shift/reduce conflict in the deterministic tables and decides between them
+at parse time from data carried by the token. Generation-time precedence
+declarations (`%left`, `%right`, `%nonassoc`, `%prec`, and equivalents) do
+not qualify: they fix each conflicted cell before the parser runs.
+Mechanisms that fork the parse and rank the survivors are recorded
+separately below; they decide at parse time but not on a single
+deterministic stack.
+
+### A.1 Deterministic LR generators
+
+| generator | construction | precedence mechanism | decided at |
+|---|---|---|---|
+| GNU Bison (LR modes) | LALR, IELR, canonical LR(1) | `%left`/`%right`/`%nonassoc`/`%prec` | generation |
+| Berkeley Yacc | LALR | yacc declarations | generation |
+| Menhir | LR(1), Pager's method | `%left`/`%right`/`%nonassoc` | generation |
+| Happy (LR mode) | LALR | `%left`/`%right`/`%nonassoc` | generation |
+| CUP | LALR | declarations + contextual `%prec` | generation |
+| Lemon | LALR | `%left`/`%right`/`%nonassoc` | generation |
+| Hyacc | LR(1) (Pager PGM), LALR | yacc declarations | generation |
+| LALRPOP | LR(1) (lane table) | none; grammar stratification | — |
+| PLY | LALR | `precedence` tuple | generation |
+| SLY | LALR | `precedence` attribute | generation |
+| Racc | LALR | precedence table | generation |
+| Rustemo (LR mode) | LR | static declarations | generation |
+| Jison (LR modes) | SLR/LALR/LR | `%left`/`%right`/`%nonassoc` | generation |
+
+None of the thirteen documents a table entry that defers a shift/reduce
+choice to token data.
+
+### A.2 Parse-time precedence in GLR systems
+
+Generalized parsers do offer parse-time precedence, by a different
+mechanism: the conflicted cell forks the parse, and precedence ranks the
+surviving alternatives. Tree-sitter's `prec.dynamic` is "applied at runtime
+instead of at parser generation time … if multiple parses end up
+succeeding, Tree-sitter will pick the subtree whose corresponding rule has
+the highest total dynamic precedence." Bison's GLR mode "tries to pick one
+of the actions by first finding one whose rule has the highest dynamic
+precedence, as set by the `%dprec` declaration." Lezer similarly permits
+declared ambiguities resolved during its GLR-style parse, and Happy has a
+GLR mode with semantic disambiguation. In each case the mechanism
+presupposes nondeterministic parsing; none applies to the tool's
+deterministic LR tables.
+
+### A.3 Runtime precedence outside LR generation
+
+Runtime-defined operators exist in settings that are not LR table
+generation. Prolog's `op/3` directive alters the operator table of its
+reader, an operator-precedence parser. Pratt parsing and precedence
+climbing decide from a binding-power table at parse time, in hand-written
+recursive descent. Swift's `precedencegroup` and Haskell's fixity
+declarations feed precedence resolution phases inside those compilers.
+These confirm that the *language feature* is in demand; what the survey did
+not find is the feature provided by a deterministic LR generator, which is
+the setting where §5's both-branches invariant must be engineered.
+
+### A.4 Scope
+
+The survey establishes absence of a documented feature, not impossibility;
+a tool with an undocumented or more recent mechanism would be a
+counterexample, and the authors would welcome one. Sources: the tools'
+official manuals — gnu.org/software/bison (3.8.2), gallium.inria.fr/~fpottier/menhir,
+haskell.org/happy, www2.cs.tum.edu/projects/cup, sqlite.org/lemon.html,
+hyacc.sourceforge.net, github.com/lalrpop/lalrpop, dabeaz.com/ply,
+sly.readthedocs.io, ruby-doc.org (Racc), igordejanovic.net/rustemo,
+gerhobbelt.github.io/jison, tree-sitter.github.io, lezer.codemirror.net,
+swi-prolog.org (`op/3`).
