@@ -134,6 +134,11 @@ Claims under test:
   bison's documented %nonassoc caveat matches our §4.3 non-fillable note.
 - Also still queued: extended-production/one-more-dot novelty search; Yang
   formulation check (machine-measured vs grammar-measured).
+- New claim in resolve-then-minimize.md §5: "no deterministic LR parser
+  generator offers runtime operator precedence." Sweep before submission:
+  Menhir, LALRPOP, Happy, CUP, lemon, Hyacc, tree-sitter/Lezer (GLR-family,
+  distinguish), ANTLR (LL, distinguish), plus operator-precedence/Pratt
+  systems (Prolog op/3, Swift) which are runtime-precedence but not LR.
 
 ## Still outstanding (workflow died at 42/100 agents)
 

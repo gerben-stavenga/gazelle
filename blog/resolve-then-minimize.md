@@ -599,12 +599,17 @@ through minimization; the completion guard above enforces the same invariant
 at the one place completion could otherwise violate it, by manufacturing a
 deferred question where the canonical machine had an unconditional answer.
 
-An inadequacy-elimination construction could support the same semantics, but
-its annotations would have to preserve an unresolved set of actions rather
-than only the result of static conflict resolution. In particular, it would
-need to distinguish “both branches are canonically available” from “only one
-branch exists here.” This is a larger proof obligation, not an impossibility
-result. Bison's `%dprec` is superficially related but operates in GLR mode by
+To our knowledge, no deterministic LR parser generator offers runtime
+operator precedence; languages that need user-defined operators fall back to
+hand-written expression parsers or to generalized parsing. We do not think
+the gap is an accident of demand, and the construction order explains its
+shape. An inadequacy-elimination construction could support the same
+semantics, but its annotations would have to preserve an unresolved set of
+actions rather than only the result of static conflict resolution — in
+particular, distinguishing “both branches are canonically available” from
+“only one branch exists here.” The feature is therefore harder, though not
+impossible, in a merge-first construction; in this one it required a single
+guard. Bison's `%dprec` is superficially related but operates in GLR mode by
 ranking surviving parses [12]; Gazelle instead chooses one action on a single
 deterministic LR stack before either branch executes.
 
