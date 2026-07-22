@@ -1,42 +1,39 @@
-# Resolve, Then Minimize: LR Parse Tables as Automata
+# Resolve, Complete, Then Minimize: LR Parse Tables as Automata
 
 ## Abstract
 
 Canonical LR(1) construction preserves the context needed for correct conflict
-resolution, but its tables are often too large to ship. Practical generators
-therefore merge states early and then prevent or repair changes caused by the
-merge. This paper explores the opposite order: construct the canonical
-automaton, resolve conflicts there, and minimize only the resulting behavior.
+resolution, but its tables often contain too many states to ship. Practical
+generators therefore merge states early and then prevent or repair changes
+caused by the merge. This paper explores the opposite order: construct the
+canonical automaton, resolve conflicts there, complete selected error entries,
+and minimize only the resulting behavior.
 
-The key representation is to encode a reduction of production *r* on
-lookahead *a* as an ordinary transition labeled *a* into an accepting state
-distinguished by *r*. Shifts, gotos, and reductions then inhabit one labeled
-transition system. This exposes the central observation: subset construction
+The key representation encodes `reduce r on a` as an ordinary transition
+labeled `a` into a state distinguished by production *r*. Shifts, gotos, and
+reductions then inhabit one labeled transition system. Subset construction
 removes nondeterminism in *where the machine goes*, but a resulting subset may
-still contain incompatible answers about *what the parser should do*. An item
-state together with a reduce state is a shift/reduce conflict; two reduce
-states are a reduce/reduce conflict. Conflicts are therefore precisely the
-output nondeterminism left after determinization.
-
-Canonical LR(1) construction becomes subset construction on the item NFA;
-conflict resolution becomes classification of the ambiguous accepting states;
-and table compression becomes ordinary partition refinement after a
-completion pass fills selected error entries with reductions. The completion
-is not a new parser transformation: it is the classical default-reduction
-mechanism under a new selection policy — reductions chosen per terminal and
-aligned across same-core states to expose equivalence, rather than one per
-state for row compression. It may delay the detection of invalid input, but
-it preserves every shift and reduction performed on valid input.
+still contain incompatible answers about *what the parser should do*: item and
+reduce nodes together encode a shift/reduce conflict, while two reduce nodes
+encode a reduce/reduce conflict. Resolution classifies this output
+nondeterminism before context is discarded. A conservative completion then
+aligns reductions across same-core states, and ordinary partition refinement
+computes the quotient. Completion is the classical default-reduction
+transformation under a per-terminal, alignment-driven selection policy. It may
+delay errors but preserves accepted-input action traces.
 
 Gazelle implements this pipeline using the same generic automaton module as
-its lexer generator. On five grammars, its canonical item-set counts and
-conflict counts agree with GNU Bison's canonical-LR mode. After completion and
-minimization, its state counts agree with Bison's IELR mode: a 292-line C++
-grammar falls from 5,350 canonical states to 601, while LALR has 571 states and
-would change resolved behavior. Equality of state counts is evidence about
-compactness, not a proof that the two constructions produce isomorphic
-machines. The result is instead a simpler route to a canonical-LR-equivalent
-parser whose size is, on the evaluated grammars, the same as IELR.
+its lexer generator. On modifier-stripped versions of five grammars, its
+canonical item-set and conflict counts agree with GNU Bison's canonical-LR
+mode. After completion and minimization, its state counts agree with Bison's
+IELR mode: the bare comparison form of a 292-line C++ grammar falls from 5,350
+canonical states to 601, while LALR has 571 states and would change resolved
+behavior. The production Gazelle grammar retains runtime-resolution modifiers
+and has 632 states; the difference is the cost of preserving those additional
+semantics. Equality of state counts is evidence about compactness, not a proof
+that the constructions produce isomorphic machines or equally sized encoded
+tables. The result is a simpler route to a canonical-LR-equivalent parser whose
+state count, on the bare grammars evaluated here, is the same as IELR.
 
 ## 1. Introduction
 
@@ -78,7 +75,7 @@ attached to table cells or states. Generic DFA minimization cannot preserve
 information absent from the transition relation. Gazelle removes the obstacle
 by representing `reduce r on a` as a transition on `a` into a per-production
 accepting state. A parser action is determined by the kind of state reached:
-reaching an item state shifts, while reaching reduce state *r* reduces by
+reaching an item state shifts, while reaching a reduce state *r* reduces by
 production *r*. If determinization reaches both kinds at once, it has made the
 transition deterministic without making the parser's answer deterministic:
 that residual choice is the conflict. Reduce states are distinguished in the
@@ -94,8 +91,8 @@ This paper makes four contributions:
    new alignment-driven selection policy, exposes common LALR-style merges
    to generic partition refinement while preserving valid-input parser
    behavior.
-4. It evaluates the construction against Bison's canonical-LR and IELR modes
-   and describes runtime precedence as an application of the representation.
+4. It evaluates state counts against Bison's canonical-LR and IELR modes and
+   describes runtime precedence as an application of the representation.
 
 The claim is deliberately narrower than global minimality. Finding the
 smallest conflict-free merge of canonical LR(1) states is NP-hard in general
@@ -244,10 +241,10 @@ push(token a):
     target = delta(top(stack), a)
     if target is item state q:
       push q; consume a; return
-    if target is reduce state R_r for A -> beta:
+    if target is a reduce state R_r for A -> beta:
+      if r is the augmented start rule: accept
       pop |beta| states
       push delta(top(stack), A)
-      if r is the augmented start rule: accept
     otherwise:
       report an error
 ```
@@ -312,6 +309,16 @@ reduce nodes and says both “reduce *r1*” and “reduce *r2*.” The state re
 exactly the set of actions that a conventional table would place in the
 conflicted cell.
 
+```text
+shift item   --a-->  advanced item --+
+                                      +--> subset {advanced item, R_r}
+completed    --a-->  R_r -----------+
+                           one edge, two parser outputs
+```
+
+**Figure 1.** Subset construction combines transition targets but does not
+choose between their parser meanings.
+
 Thus an LR conflict is the nondeterminism subset construction cannot and should
 not erase: multiple semantic outputs survive in one deterministic subset. The
 grammar, together with one token of evidence, has not selected a unique parse
@@ -334,14 +341,14 @@ conflict NAME   both actions are kept; the lexer decides per token (§5)
 There is no silent default. An unannotated conflict fails generation with
 its counterexamples unless the grammar acknowledges the exact conflict
 count (`expect 3 rr;`), in which case acknowledged reduce/reduce conflicts
-resolve to the earlier rule. Resolution is data in the grammar rather than
-a property of the tool: the dangling else is the single declaration
-`shift ELSE`, naming the classical disambiguation where the terminal is
-introduced. The property that matters for this paper is timing: whatever
-the declarations say, classification happens on the unmerged canonical
-machine. After it, each reachable state has one runtime meaning — or, for
-`prec` and `conflict` terminals, one precisely delimited deferred
-question (§5).
+resolve to the earlier rule; an acknowledged shift/reduce conflict resolves
+to shift. Resolution is data in the grammar rather than an undocumented tool
+default: the dangling else is the single declaration `shift ELSE`, naming the
+classical disambiguation where the terminal is introduced. The property that
+matters for this paper is timing: whatever the declarations say,
+classification happens on the unmerged canonical machine. After it, each
+reachable state has one runtime meaning — or, for `prec` and `conflict`
+terminals, one precisely delimited deferred question (§5).
 
 A hybrid state can duplicate the item behavior of a pure item state elsewhere
 in the automaton. This is an artifact of putting alternatives into target
@@ -390,8 +397,11 @@ changes only the *selection policy*. Classical defaults choose one reduction
 per state, to compress that state's row; Gazelle chooses per terminal, and
 aligns the choices across states with the same LR(0) core, to make whole
 rows equal — compression of the state *set* rather than of a single row.
-The parser semantics cannot tell the policies apart: in both, an error
-entry is replaced by a reduction that no successful parse consults.
+Recognition and accepted-input action traces cannot tell these insertions
+apart: in both, an error entry is replaced by a reduction that no successful
+parse consults. Failed-parse behavior can distinguish them. The policies may
+run different semantic actions on doomed paths, delay error reporting by
+different amounts, and change when a feedback-sensitive lexer is called.
 
 Under either policy, every inserted entry satisfies the same two local
 conditions: (i) it replaces an error entry — no existing action changes —
@@ -445,45 +455,55 @@ parser and performs the same shifts and reductions on each such string.
 
 There are two transformations to justify.
 
-**Completion.** Existing edges are never changed. On every valid canonical
-parse, the current terminal or nonterminal therefore follows the same edge as
-before, and the sequence of shifts and reductions is unchanged. For
-rejection, the key fact is a monotonicity property of reductions: a
-reduction is a parse commitment, so the set of strings acceptable from the
-stack it produces is a subset of the set acceptable from the stack it
-consumed. An inserted reduction is, by condition (ii) of §4.3, a step the
-state performs legitimately under some other lookahead; taking it under a
-non-viable lookahead `a` therefore yields a stack for which `a` is still
-non-viable. By induction, a run consulting inserted entries can only keep
-reducing — it can never reach a shift on `a`, because a shift entry exists
-only where its token is viable. The parser may pop and reduce on a doomed
-run, but it reports the error before consuming the offending token: the
-correct-prefix property is preserved, and no rejected string becomes
-accepted. The argument is local to each inserted entry and each run, so the
-per-terminal independence of the selection policy creates no interaction
-between insertions. One global assumption completes the rejection half:
-each inserted reduction is locally a legal parse step, so a doomed run's
-cascade builds a genuine partial parse of the consumed prefix, and under
-the reduced, non-cyclic hypothesis of §2 the cascade must terminate — in a
-state whose row has no entry for the offending token, where the error is
-reported.
+**Completion.** Write a parser configuration as `(sigma, w)`, where `sigma` is
+the stack of canonical states and `w` is the unread token string. Existing
+edges are never changed. Every configuration on an accepting canonical run
+therefore follows the same edge as before, and its sequence of shifts and
+reductions is unchanged.
+
+For rejection, consider the first inserted edge consulted in a run. It is a
+reduction by `A -> beta` on lookahead `a` from a state whose canonical cell on
+`a` was an error. The source state nevertheless contains the completed LR(0)
+item `A -> beta .`; same-core completion has extended only its lookahead.
+Let the stack encode a viable prefix ending in `gamma beta`. If taking the
+inserted reduction and later accepting were possible, the accepting run would
+witness a rightmost derivation in which `a` can follow the corresponding
+occurrence of `A` after `beta` is reduced. Canonical LR(1) lookahead propagation
+would then include `a` on that completed item and put a reduce action in the
+original cell, contradicting that the cell was an error. Thus an inserted
+reduction preserves the non-viability of the held lookahead. Repeating the
+argument after each inserted reduction shows that a doomed run cannot reach a
+shift of that token or an accepting configuration.
+
+The parser may pop and reduce before discovering the error, but it rejects
+without consuming the offending token: the correct-prefix property is
+preserved. The argument is local to each inserted entry and run, so choosing
+donors independently per terminal creates no interaction between insertions.
+The reduced, non-cyclic hypothesis of §2 supplies termination: every inserted
+edge is a locally legal reduction, and a no-input reduction cascade cannot be
+unbounded. It must end in a state whose row has no entry for the held token.
 
 **Quotienting.** Partition refinement merges only states with the same
 classification and the same labeled transitions modulo the final partition.
-Replacing a state by its equivalence class therefore preserves every future
-edge and action of the completed machine. Reduce states for different
-productions begin in distinct classes and can never merge. By induction over
-parser steps—including the goto following each reduction—the quotient parser
-has the same behavior as the completed parser.
+Relate a completed-machine stack `q0 ... qn` to the quotient stack
+`[q0] ... [qn]` pointwise. A shift preserves this relation because equivalent
+states have transitions on the same label into the same target class. A
+reduction preserves it because different rule states never merge, both stacks
+pop the same number of entries, and equivalent exposed states have equivalent
+gotos on the production's left-hand side. Induction over parser steps therefore
+gives the same action at each configuration and preserves acceptance in both
+directions.
 
 Together, the transformations preserve accepted strings and the action trace
 on every accepted string. They may change the point at which a rejected string
 fails, as allowed by §2.2.
 
-This is a proof sketch of the implemented criterion, not a claim that every
-possible completion satisfying the same external semantics has been
-characterized. A mechanized proof or an executable bisimulation checker would
-strengthen the result.
+This remains a proof sketch of the implemented criterion, not a claim that
+every completion satisfying the same external semantics has been
+characterized. A full proof should define viability over stack configurations
+and prove the inserted-reduction lemma above directly from the canonical item
+construction. A mechanized proof or an executable equivalence checker would
+strengthen the result further.
 
 ### 4.5 Relation to NP-hard minimization
 
@@ -514,7 +534,8 @@ generators resolve each conflicted table cell statically. Gazelle can instead
 defer selected shift/reduce choices to token data, allowing one terminal to
 represent operators whose precedence is known only at runtime.
 
-For a precedence-bearing terminal `OP`, construction creates a virtual symbol
+All non-plain terminal declarations use the same representational device.
+For a modified terminal `OP`, construction creates a virtual symbol
 `OP_reduce`. Shift transitions retain the real symbol; completed items use the
 virtual symbol on edges to reduce states:
 
@@ -524,9 +545,11 @@ item --OP_reduce-> reduce target
 ```
 
 Because the labels differ, subset construction and minimization see an
-ordinary deterministic automaton. During table extraction the two columns are
-combined into a `shift-or-reduce` entry. At runtime the incoming token's
-precedence and associativity choose one branch.
+ordinary deterministic automaton. During table extraction, `shift` and
+`reduce` declarations select their named branch statically. The `prec` and
+`conflict` declarations combine the two columns into a `shift-or-reduce`
+entry. For `prec`, the incoming token's precedence and associativity choose
+one branch at runtime.
 
 Completion needs one additional guard. A state may lack `OP_reduce` while
 having a real `OP` shift. Filling the virtual gap would not merely add a
@@ -534,11 +557,11 @@ reduction on an invalid path; it would turn a canonical unconditional shift
 into a deferred choice on valid input. Gazelle therefore does not fill a
 virtual reduce edge into a state that has a transition on its real twin.
 
-`conflict` terminals ride the same mechanism with a different decision
-source: both branches survive to the table, and the lexer, rather than a
-precedence comparison, supplies the answer per token. This is how Gazelle
-handles C's typedef ambiguity without a lexer hack baked into the parser
-tables.
+`conflict` terminals use the same mechanism with a different decision source:
+both branches survive to the table, and the lexer, rather than a precedence
+comparison, supplies the answer per token. Gazelle uses this explicit feedback
+channel for C's typedef ambiguity; the contextual decision remains in the
+lexer, but its effect on parsing is represented directly in the table.
 
 The application illustrates the advantage of resolving semantics before
 merging. The transition system can preserve both branches until runtime, and
@@ -551,9 +574,12 @@ lexer feedback and semantic values—is outside this paper's central claim.
 Gazelle's `--yacc` mode emits an equivalent Bison grammar, allowing Bison to
 serve as an independent implementation reference. The evaluation uses five
 grammars: C++, C11, Python, Gazelle's regular-expression grammar, and its
-self-hosted meta grammar. Terminal resolution modifiers (`shift`, `prec`,
-`conflict`) are stripped for the comparison, so both tools receive the same
-bare grammar, and conflicts are counted rather than resolved.
+self-hosted meta grammar. Terminal resolution modifiers (`shift`, `reduce`,
+`prec`, `conflict`) are stripped for the comparison, so both tools receive the
+same bare grammar, and conflicts are counted before applying the tools'
+matching default choices. These comparison machines are not the production
+Gazelle tables when a grammar uses modifiers; §6.2 reports both counts
+separately.
 
 ### 6.1 Canonical construction
 
@@ -581,13 +607,13 @@ the correspondence in §3.1, but “same number of states” is weaker than a
 bijection between item sets. A stronger test would export both machines and
 compare normalized item sets directly.
 
-### 6.2 Completed and minimized construction
+### 6.2 Completed and minimized state counts
 
 The second comparison uses Bison's IELR and LALR modes, again subtracting the
 synthetic accept state.
 
-| grammar | Gazelle final | Bison IELR − `$accept` | Bison LALR − `$accept` |
-|---------|--------------:|------------------------:|------------------------:|
+| bare grammar | Gazelle final | Bison IELR − `$accept` | Bison LALR − `$accept` |
+|--------------|--------------:|------------------------:|------------------------:|
 | C++     | 601           | 601                     | 571                     |
 | C11     | 470           | 470                     | 470                     |
 | Python  | 418           | 418                     | 418                     |
@@ -600,11 +626,31 @@ resolved behavior, and Gazelle retains the same number. Gazelle compresses the
 canonical machine by a factor of 8.9 while avoiding the merge that would alter
 the reference parser.
 
-The equality is empirical. It does not establish that Gazelle and IELR always
-produce the same quotient, that the machines are isomorphic, or that either
-count is globally optimal. The present evidence supports two separate claims:
-the construction preserves canonical resolved behavior by its ordering and
-equivalence criterion, and its compactness matches IELR on these grammars.
+The production Gazelle grammars retain their terminal modifiers. Virtual
+reduce symbols and the guard of §5 can keep states separate when merging them
+would manufacture a static or runtime choice absent from the canonical
+machine:
+
+| production grammar | Gazelle states with modifiers |
+|--------------------|-------------------------------:|
+| C++                | 632                            |
+| C11                | 506                            |
+| Python             | 418                            |
+| regex              | 44                             |
+| meta               | 61                             |
+
+The 31-state C++ and 36-state C11 differences are therefore not failures to
+reach the bare IELR count. They are the measured cost of semantics removed
+from the Bison comparison. Conversely, the equal Python, regex, and meta
+counts show that modifiers do not necessarily prevent the same quotient.
+
+The bare-count equality is empirical. It does not establish that Gazelle and
+IELR always produce the same quotient, that the machines are isomorphic, that
+their encoded tables occupy the same number of bytes, or that either count is
+globally optimal. The present evidence supports two separate claims: the
+construction preserves canonical resolved behavior by its ordering and
+equivalence criterion, and its state-count compactness matches IELR on these
+bare grammars.
 
 ### 6.3 Implementation size and cost
 
@@ -617,12 +663,19 @@ reduce edges, and extracts tables.
 Gazelle eagerly allocates one NFA node for every `(production, dot,
 lookahead)` triple, including unreachable triples. This trades memory for
 simple index arithmetic; subset construction visits only reachable sets. The
-C++ grammar builds in approximately six seconds in the current development
-environment, including counterexample generation for roughly three thousand
-intentional conflicts. These figures are engineering observations rather than
-a controlled performance study. A complete evaluation should report peak
-memory, construction time by phase, generated-table bytes, and parse speed
-against other generators.
+C++ grammar builds in approximately six seconds in the development environment
+used for the reported comparison, including counterexample generation for
+roughly three thousand intentional conflicts. The Bison measurements were
+reproduced with GNU Bison 3.8.2. These figures are engineering observations
+rather than a controlled performance study. A complete evaluation should
+report the source revision and grammar hashes, hardware, peak memory,
+construction time by phase, action and goto entry counts, generated-table
+bytes, and parse speed against other generators.
+
+The repository's opt-in Bison regression currently covers C11, Python, regex,
+meta, and a small LR(1)-but-not-LALR witness. The larger C++ row and its
+conflict normalization were measured separately; adding them to the automated
+artifact is necessary for full reproducibility of the headline result.
 
 ## 7. Related work
 
@@ -674,7 +727,7 @@ not contradict that result.
 
 ## 8. Limitations and future work
 
-The present construction has five important limitations.
+The present construction and evaluation have six important limitations.
 
 First, the preservation argument should be made fully formal. §4.4 reduces
 the parser-specific content to a single lemma — inserted reductions preserve
@@ -684,12 +737,15 @@ stack assumptions explicit, and should include the formal statement that
 classical per-state default reductions satisfy the same insertion
 conditions.
 
-Second, the evaluation establishes count agreement, not table equivalence.
+Second, the evaluation establishes state-count agreement, not table
+equivalence or equal encoded size.
 Exporting Bison and Gazelle machines into a common representation would permit
 item-set comparison for canonical construction and a bisimulation or product-
-machine check after resolution.
+machine check after resolution. Reporting action/goto entries and serialized
+bytes would test the motivating claim about tables being small enough to ship.
 
-Third, only five grammars are measured. A corpus covering more LR(1)-but-not-
+Third, only five grammars are measured, and the headline C++ row is not yet in
+the automated differential regression. A corpus covering more LR(1)-but-not-
 LALR grammars, grammars with different conflict policies, nullable cycles, and
 large generated languages would better characterize when Gazelle's fixed
 completion matches IELR size and when it does not.
@@ -699,6 +755,12 @@ semantic actions on invalid input. The generated parser preserves recognition
 and valid parses, not an identical failed-parse trace. Error recovery may also
 observe differences that simple recognition does not. These behaviors should
 be measured explicitly.
+
+Fifth, the modifier-stripped Bison comparison isolates the minimization
+algorithm but does not measure the cost of Gazelle's full resolution model.
+The production counts in §6.2 begin to expose that cost; trace-equivalence
+tests over adversarial grammars should cover `shift`, `reduce`, `prec`, and
+`conflict` policies directly.
 
 Finally, the current partition-refinement implementation is a simple
 Moore-style fixed-point algorithm, not Hopcroft's asymptotically faster
@@ -723,49 +785,55 @@ partition refinement computes the coarsest quotient of the completed resolved
 machine.
 
 The result is not a solution to globally minimal LR table construction. It is
-a simpler construction of a canonical-LR-equivalent parser whose table sizes,
-on the evaluated grammars, equal those produced by IELR. More broadly, it is
-an example of a useful engineering principle: when a domain-specific object
-nearly fits a mature generic algorithm, changing the representation may be
-more effective than inventing another domain-specific algorithm.
+a simpler construction of a canonical-LR-equivalent parser whose state counts,
+on the modifier-stripped grammars evaluated here, equal those produced by
+IELR. Production grammars with additional resolution semantics may retain more
+states, and equal state counts do not imply equal encoded bytes. More broadly,
+the construction illustrates a useful engineering principle: when a
+domain-specific object nearly fits a mature generic algorithm, changing the
+representation may be more effective than inventing another domain-specific
+algorithm.
 
 ## References
 
 [1] D. E. Knuth, “On the translation of languages from left to right,”
-*Information and Control* 8(6), 1965.
+*Information and Control* 8(6), pp. 607–639, 1965.
 
 [2] F. DeRemer, *Practical Translators for LR(k) Languages*, PhD thesis,
 MIT, 1969.
 
 [3] D. Pager, “A practical general method for constructing LR(k) parsers,”
-*Acta Informatica* 7, 1977.
+*Acta Informatica* 7, pp. 249–268, 1977.
 
 [4] J. E. Denny and B. A. Malloy, “The IELR(1) algorithm for generating
 minimal LR(1) parser tables for non-LR(1) grammars with conflict resolution,”
-*Science of Computer Programming* 75(11), 2010.
+*Science of Computer Programming* 75(11), pp. 943–979, 2010.
+doi:10.1016/j.scico.2009.08.001.
 
 [5] Wuu Yang, “Minimizing LR(1) state machines is NP-hard,” arXiv:2110.00776,
-2021.
+2021. doi:10.48550/arXiv.2110.00776.
 
 [6] D. Grune and C. J. H. Jacobs, *Parsing Techniques: A Practical Guide*,
 2nd ed., Springer, 2008.
 
-[7] J. Gallier, notes on LR parsing and the item-NFA construction, University
-of Pennsylvania.
+[7] J. Gallier, “A Survey of LR-Parsing Methods: The Graph Method for Computing
+Fixed Points; Computation of FIRST, FOLLOW, and LALR(1) Lookahead Sets,”
+University of Pennsylvania, 2008, §11.
 
 [8] S. Heilbrunner, “A parsing automata approach to LR theory,” *Theoretical
-Computer Science* 15, 1981.
+Computer Science* 15, pp. 117–157, 1981.
 
 [9] S. Kannapinn, *Eine Rekonstruktion der LR-Theorie zur Elimination von
 Redundanz mit Anwendung auf den Bau von ELR-Parsern*, Dissertation,
-Technische Universität Berlin, 2001.
+Technische Universität Berlin, 2001, especially ch. 4, pp. 39–54.
+doi:10.14279/depositonce-276.
 
 [10] E. Scott and A. Johnstone, “Generalized bottom up parsers with reduced
-stack activity,” *The Computer Journal* 48(5), 2005.
+stack activity,” *The Computer Journal* 48(5), pp. 565–587, 2005.
 
 [11] A. V. Aho and S. C. Johnson, “LR parsing,” *ACM Computing Surveys*
-6(2), 1974.
+6(2), pp. 99–124, 1974.
 
-[12] Free Software Foundation, *Bison: The Yacc-compatible Parser
-Generator*, manual section “Default Reductions” (`%define
-lr.default-reduction`).
+[12] Free Software Foundation, *Bison: The Yacc-compatible Parser Generator*,
+manual §§5.8.1–5.8.2, “LR Table Construction” and “Default Reductions”
+(`%define lr.default-reduction`).
